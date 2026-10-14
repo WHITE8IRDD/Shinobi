@@ -71,9 +71,7 @@ fun VideoOptionsSheet(video: VideoItem, player: PlayerState, onDismiss: () -> Un
         }
         OptionRow(Icons.Rounded.PlaylistPlay, "Play next") { player.playNext(video); onDismiss() }
         OptionRow(Icons.AutoMirrored.Rounded.PlaylistAdd, "Add to queue") { player.addToQueue(video); onDismiss() }
-        if (Account.signedIn) {
-            OptionRow(Icons.Rounded.WatchLater, "Save to Watch later") { player.saveToWatchLater(video); onDismiss() }
-        }
+        OptionRow(Icons.Rounded.WatchLater, "Save to Watch later") { player.saveToWatchLater(video); onDismiss() }
         OptionRow(Icons.Rounded.Share, "Share") {
             val send = Intent(Intent.ACTION_SEND).setType("text/plain")
                 .putExtra(Intent.EXTRA_TEXT, "https://youtu.be/${video.id}")

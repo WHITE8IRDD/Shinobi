@@ -340,7 +340,7 @@ fun ResumeBar(videoId: String, modifier: Modifier = Modifier) {
     }
 }
 
-// ── Empty / error states ───────────────────────────────────────────────────────
+// ── Empty / error states & action buttons ──────────────────────────────────────
 
 @Composable
 fun EmptyState(
@@ -351,20 +351,41 @@ fun EmptyState(
     action: (@Composable () -> Unit)? = null,
 ) {
     val c = MaterialTheme.colorScheme
+    val shape = RoundedCornerShape(28.dp)
     Column(
-        modifier = modifier.fillMaxWidth().padding(horizontal = 36.dp, vertical = 48.dp),
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 12.dp)
+            .clip(shape)
+            .background(c.surfaceContainerLow)
+            .border(1.dp, c.outlineVariant.copy(alpha = 0.25f), shape)
+            .padding(horizontal = 28.dp, vertical = 32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box(
-            modifier = Modifier.size(72.dp).clip(SunnyShape).background(c.primaryContainer),
+            modifier = Modifier.size(64.dp).clip(SunnyShape).background(c.primaryContainer),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(icon, contentDescription = null, tint = c.onPrimaryContainer, modifier = Modifier.size(32.dp))
+            Icon(icon, contentDescription = null, tint = c.onPrimaryContainer, modifier = Modifier.size(28.dp))
         }
-        Spacer(Modifier.height(18.dp))
-        Text(title, fontFamily = RoundedHeavy, fontWeight = FontWeight.ExtraBold, fontSize = 20.sp, textAlign = TextAlign.Center)
-        Spacer(Modifier.height(8.dp))
-        Text(body, color = c.onSurfaceVariant, fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.Medium, textAlign = TextAlign.Center)
+        Spacer(Modifier.height(16.dp))
+        Text(
+            title,
+            fontFamily = RoundedHeavy,
+            fontWeight = FontWeight.ExtraBold,
+            fontSize = 20.sp,
+            letterSpacing = (-0.5).sp,
+            textAlign = TextAlign.Center,
+        )
+        Spacer(Modifier.height(6.dp))
+        Text(
+            body,
+            color = c.onSurfaceVariant,
+            fontSize = 14.sp,
+            lineHeight = 20.sp,
+            fontWeight = FontWeight.Medium,
+            textAlign = TextAlign.Center,
+        )
         if (action != null) {
             Spacer(Modifier.height(20.dp))
             action()
@@ -373,22 +394,75 @@ fun EmptyState(
 }
 
 @Composable
-fun PillButton(text: String, onClick: () -> Unit, icon: ImageVector? = null) {
+fun PillButton(text: String, onClick: () -> Unit, icon: ImageVector? = null, modifier: Modifier = Modifier) {
     val c = MaterialTheme.colorScheme
     Row(
-        modifier = Modifier
+        modifier = modifier
             .pressable(onClick = onClick)
             .height(44.dp)
             .clip(CircleShape)
             .background(c.primary)
             .padding(horizontal = 20.dp),
+        horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (icon != null) {
             Icon(icon, null, tint = c.onPrimary, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(6.dp))
+            Spacer(Modifier.width(7.dp))
         }
         Text(text, color = c.onPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+    }
+}
+
+@Composable
+fun TonalPillButton(text: String, onClick: () -> Unit, icon: ImageVector? = null, modifier: Modifier = Modifier) {
+    val c = MaterialTheme.colorScheme
+    Row(
+        modifier = modifier
+            .pressable(onClick = onClick)
+            .height(44.dp)
+            .clip(CircleShape)
+            .background(c.surfaceContainerHigh)
+            .border(1.dp, c.outlineVariant.copy(alpha = 0.35f), CircleShape)
+            .padding(horizontal = 18.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (icon != null) {
+            Icon(icon, null, tint = c.primary, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(7.dp))
+        }
+        Text(text, color = c.onSurface, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+    }
+}
+
+@Composable
+fun FeatureBentoCard(
+    icon: ImageVector,
+    title: String,
+    body: String,
+    modifier: Modifier = Modifier,
+    onClick: (() -> Unit)? = null,
+) {
+    val c = MaterialTheme.colorScheme
+    val shape = RoundedCornerShape(24.dp)
+    val base = if (onClick != null) modifier.pressable(pressedScale = 0.97f, onClick = onClick) else modifier
+    Column(
+        modifier = base
+            .clip(shape)
+            .background(c.surfaceContainerLow)
+            .border(1.dp, c.outlineVariant.copy(alpha = 0.22f), shape)
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Box(
+            modifier = Modifier.size(40.dp).clip(CookieShape).background(c.primaryContainer),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(icon, contentDescription = null, tint = c.onPrimaryContainer, modifier = Modifier.size(20.dp))
+        }
+        Text(title, fontWeight = FontWeight.ExtraBold, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(body, color = c.onSurfaceVariant, fontSize = 12.5.sp, lineHeight = 17.sp, fontWeight = FontWeight.Medium)
     }
 }
 

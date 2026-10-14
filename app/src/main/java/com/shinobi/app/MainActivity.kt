@@ -57,16 +57,19 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.SmartDisplay
 import androidx.compose.material.icons.outlined.Subscriptions
 import androidx.compose.material.icons.outlined.VideoLibrary
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.SmartDisplay
 import androidx.compose.material.icons.rounded.Subscriptions
 import androidx.compose.material.icons.rounded.VideoLibrary
 import androidx.compose.material3.Icon
@@ -122,19 +125,19 @@ class MainActivity : ComponentActivity() {
 
 enum class Tab(val label: String, val icon: ImageVector, val selectedIcon: ImageVector) {
     Home("Home", Icons.Outlined.Home, Icons.Rounded.Home),
+    Shorts("Shorts", Icons.Outlined.SmartDisplay, Icons.Rounded.SmartDisplay),
     Subscriptions("Subscriptions", Icons.Outlined.Subscriptions, Icons.Rounded.Subscriptions),
     Search("Search", Icons.Rounded.Search, Icons.Rounded.Search),
     Library("Library", Icons.Outlined.VideoLibrary, Icons.Rounded.VideoLibrary),
 }
 
-// Shinobi's floating stack: a 56 dp nav pill capped at 328 dp, the mini-player 8 dp above
+// Shinobi's floating stack: a 62 dp nav pill capped at 364 dp, the mini-player 8 dp above
 // it capped at 368 dp, both centered.
-// 62 dp (product owner, 2026-10-05): between Shinobi's 56 and Shinobi's 78. Tabs keep 50 dp targets.
 private val NavHeight = 62.dp
-private val NavWidth = 328.dp
+private val NavWidth = 364.dp
 private val MiniWidth = 368.dp
 private val MiniGap = 8.dp
-private const val SELECTED_TAB_WEIGHT = 2.2f
+private const val SELECTED_TAB_WEIGHT = 2.35f
 
 @Composable
 fun ShinobiApp() {
@@ -143,18 +146,40 @@ fun ShinobiApp() {
     val scope = rememberCoroutineScope()
     val search = remember { SearchState(scope) }
     val lib = remember { LibraryData(scope) }
+    val personalizedHome = remember { PersonalizedHomeState(scope) }
+    val shortsFeed = remember { ShortsFeedState(scope) }
+    val localSubs = remember { LocalSubscriptionsFeedState(scope) }
     var signingIn by remember { mutableStateOf(false) }
     var accountSheet by remember { mutableStateOf(false) }
     var openPlaylist by remember { mutableStateOf<PlaylistRef?>(null) }
     var openChannel by remember { mutableStateOf<String?>(null) }
     // Kept after closing so the page can slide out with its content.
     var channelState by remember { mutableStateOf<ChannelState?>(null) }
-    val playlistFeed = remember(openPlaylist?.id) { openPlaylist?.let { lib.playlistFeed(it.id) } }
+    val playlistFeed = remember(openPlaylist?.id) {
+        openPlaylist?.takeUnless { it.id.startsWith("LOCAL_") }?.let { lib.playlistFeed(it.id) }
+    }
     var tab by rememberSaveable { mutableStateOf(Tab.Home) }
     // Bumped when the already-selected tab is tapped; that tab's list scrolls to the top.
     val scrollToTop = remember { mutableStateMapOf<Tab, Int>() }
     val reduced = rememberReducedMotion()
     val morph = remember { PlayerMorph(scope) { expanded -> player.expanded = expanded } }
+
+    fun openShortItem(item: VideoItem, shelf: List<VideoItem> = emptyList()) {
+        openPlaylist = null
+        openChannel = null
+        shortsFeed.openWith(item, shelf)
+        tab = Tab.Shorts
+    }
+
+    fun openVideoOrShort(item: VideoItem) {
+        if (item.isShort) openShortItem(item) else player.open(item)
+    }
+
+    LaunchedEffect(tab) {
+        if (tab != Tab.Shorts && player.inShortsMode) {
+            player.exitShortsMode()
+        }
+    }
 
     // The screen stays on while a video plays (full player, mini-player or fullscreen);
     // paused, the normal timeout applies again. Only affects the visible window.
@@ -191,7 +216,7 @@ fun ShinobiApp() {
     val stackBottom = navBottom.coerceAtLeast(8.dp) +
         if (WindowInsets.tappableElement.asPaddingValues().calculateBottomPadding() > 0.dp) 10.dp else 0.dp
     var optionsFor by remember { mutableStateOf<VideoItem?>(null) }
-    val hasMini = player.current != null
+    val hasMini = player.current != null && !player.inShortsMode && tab != Tab.Shorts
     // Lists scroll fully clear of the floating nav (and mini-player when present).
     val contentPadding = PaddingValues(
         bottom = stackBottom + NavHeight + (if (hasMini) MiniHeight + MiniGap else 0.dp) + 16.dp,
@@ -296,19 +321,53 @@ fun ShinobiApp() {
         ) { t ->
             when (t) {
                 Tab.Home -> HomeScreen(
-                    lib, contentPadding, onOpen = player::open, onSearch = { tab = Tab.Search },
-                    onSignIn = { signingIn = true }, onAccount = { accountSheet = true },
+                    lib = lib,
+                    personalized = personalizedHome,
+                    contentPadding = contentPadding,
+                    onOpen = ::openVideoOrShort,
+                    onOpenShort = ::openShortItem,
+                    onOpenShortsTab = { tab = Tab.Shorts },
+                    onSearch = { tab = Tab.Search },
+                    onSignIn = { signingIn = true },
+                    onAccount = { accountSheet = true },
                     scrollToTop = scrollToTop[Tab.Home] ?: 0,
                 )
+                Tab.Shorts -> ShortsScreen(
+                    feed = shortsFeed,
+                    player = player,
+                    contentPadding = contentPadding,
+                    showSurface = !showPlayer && !showFullscreen && openChannel == null && openPlaylist == null,
+                    onSearch = { tab = Tab.Search },
+                )
                 Tab.Subscriptions -> SubscriptionsScreen(
-                    lib, contentPadding, onOpen = player::open,
-                    onSignIn = { signingIn = true }, onAccount = { accountSheet = true },
+                    lib = lib,
+                    localSubs = localSubs,
+                    contentPadding = contentPadding,
+                    onOpen = ::openVideoOrShort,
+                    onSearch = { tab = Tab.Search },
+                    onSignIn = { signingIn = true },
+                    onAccount = { accountSheet = true },
                     scrollToTop = scrollToTop[Tab.Subscriptions] ?: 0,
                 )
-                Tab.Search -> SearchScreen(search, contentPadding, onOpen = player::open, scrollToTop = scrollToTop[Tab.Search] ?: 0)
+                Tab.Search -> SearchScreen(
+                    state = search,
+                    contentPadding = contentPadding,
+                    onOpen = ::openVideoOrShort,
+                    onOpenShort = ::openShortItem,
+                    scrollToTop = scrollToTop[Tab.Search] ?: 0,
+                )
                 Tab.Library -> LibraryScreen(
-                    lib, contentPadding, onOpen = player::open, onOpenPlaylist = { openPlaylist = it },
-                    onSignIn = { signingIn = true }, onAccount = { accountSheet = true },
+                    lib = lib,
+                    contentPadding = contentPadding,
+                    onOpen = ::openVideoOrShort,
+                    onOpenPlaylist = { openPlaylist = it },
+                    onSearch = { tab = Tab.Search },
+                    onSelectSearchQuery = { q ->
+                        search.submit(q)
+                        tab = Tab.Search
+                    },
+                    onSignIn = { signingIn = true },
+                    onAccount = { accountSheet = true },
                     scrollToTop = scrollToTop[Tab.Library] ?: 0,
                 )
             }
@@ -321,9 +380,8 @@ fun ShinobiApp() {
             exit = if (reduced) fadeOut(snap()) else slideOutHorizontally(tween(300, easing = Motion.Emphasized)) { it } + fadeOut(tween(220)),
         ) {
             val pl = openPlaylist
-            val feed = playlistFeed
-            if (pl != null && feed != null) {
-                PlaylistScreen(pl, feed, contentPadding, onBack = { openPlaylist = null }, onOpen = player::open)
+            if (pl != null) {
+                PlaylistScreen(pl, playlistFeed, contentPadding, onBack = { openPlaylist = null }, onOpen = ::openVideoOrShort)
             }
         }
 
@@ -341,7 +399,8 @@ fun ShinobiApp() {
         // Shinobi's bottom vignette: the page color fades in over the last 130 dp (plus the
         // system bar), so content dissolves behind the mini-player and tab bar instead of
         // running hard into them. Drawn only — it never intercepts touches.
-        val pageColor = c.surface
+        val inDarkShorts = tab == Tab.Shorts && shortsFeed.shorts.isNotEmpty() && openChannel == null && openPlaylist == null
+        val pageColor = if (inDarkShorts) Color(0xFF0A0A0D) else c.surface
         val vignette = remember(pageColor) { vignetteBrush(pageColor, opaqueAtTop = false) }
         Box(
             Modifier
@@ -444,7 +503,10 @@ fun ShinobiApp() {
         when (player.sheet) {
             PlayerSheet.Quality -> QualitySheet(player, onDismiss = { player.sheet = null })
             PlayerSheet.Captions -> CaptionsSheet(player, onDismiss = { player.sheet = null })
-            PlayerSheet.Comments -> Unit // a panel inside the player (PlayerScreen)
+            PlayerSheet.Comments -> if (!showPlayer) {
+                val screenH = LocalConfiguration.current.screenHeightDp.dp
+                CommentsPanel(player.comments, partialTop = screenH * 0.30f, onClose = { player.sheet = null })
+            }
             PlayerSheet.Queue -> QueueSheet(player, onDismiss = { player.sheet = null })
             null -> Unit
         }
@@ -493,10 +555,11 @@ private fun NavPill(selected: Tab, onSelect: (Tab) -> Unit, modifier: Modifier =
             .widthIn(max = NavWidth)
             .height(NavHeight)
             .fillMaxWidth()
-            .shadow(20.dp, shape, clip = false, ambientColor = Color.Black.copy(alpha = 0.10f), spotColor = Color.Black.copy(alpha = 0.12f)),
+            .shadow(20.dp, shape, clip = false, ambientColor = Color.Black.copy(alpha = 0.12f), spotColor = Color.Black.copy(alpha = 0.15f))
+            .border(1.dp, c.outlineVariant.copy(alpha = 0.25f), shape),
         shape = shape,
-        color = c.surfaceVariant,
-        tonalElevation = 10.dp,
+        color = c.surfaceContainerHigh,
+        tonalElevation = 0.dp,
         shadowElevation = 0.dp,
     ) {
         Row(Modifier.padding(6.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {

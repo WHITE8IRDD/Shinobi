@@ -48,6 +48,7 @@ data class VideoItem(
     val durationSec: Long,
     val views: Long,
     val uploaded: String?,
+    val isShort: Boolean = false,
 )
 
 @Immutable
@@ -132,6 +133,9 @@ object YouTube {
     suspend fun details(id: String): VideoDetails = withContext(Dispatchers.IO) {
         val info = StreamCache.getOrLoad(id)
         val picked = StreamSelection.pick(info)
+        val aspect = (if (picked.usesSeparate) picked.video else picked.muxed)
+            ?.takeIf { it.width > 0 && it.height > 0 }?.let { it.width.toFloat() / it.height }
+        val isShort = info.isShortFormContent || (info.duration in 1..60 && aspect != null && aspect < 0.85f)
         VideoDetails(
             item = VideoItem(
                 id = id,
@@ -143,6 +147,7 @@ object YouTube {
                 durationSec = info.duration,
                 views = info.viewCount,
                 uploaded = uploadedText(info.textualUploadDate, info.uploadDate),
+                isShort = isShort,
             ),
             description = info.description?.let { d ->
                 if (d.type == Description.HTML) HtmlCompat.fromHtml(d.content, HtmlCompat.FROM_HTML_MODE_COMPACT).toString().trim()
@@ -154,8 +159,7 @@ object YouTube {
             playable = picked.isPlayable,
             quality = picked.playedHeight?.let { "${it}p" },
             qualities = StreamSelection.heights(info),
-            aspect = (if (picked.usesSeparate) picked.video else picked.muxed)
-                ?.takeIf { it.width > 0 && it.height > 0 }?.let { it.width.toFloat() / it.height },
+            aspect = aspect,
             captions = info.subtitles
                 .asSequence()
                 .filter { it.isUrl && it.content.startsWith("https://", ignoreCase = true) }
@@ -208,6 +212,7 @@ object YouTube {
         // Live and upcoming entries need HLS handling that isn't built yet.
         if (streamType != StreamType.VIDEO_STREAM) return null
         val id = runCatching { service.streamLHFactory.getId(url) }.getOrNull() ?: return null
+        val short = isShortFormContent || url.contains("/shorts/") || (duration in 1..60 && name.contains("#short", ignoreCase = true))
         return VideoItem(
             id = id,
             title = name,
@@ -218,6 +223,7 @@ object YouTube {
             durationSec = duration,
             views = viewCount,
             uploaded = uploadedText(textualUploadDate, uploadDate),
+            isShort = short,
         )
     }
 

@@ -73,7 +73,12 @@ class ChannelState(val url: String, private val scope: CoroutineScope) {
             runCatching { YouTube.channel(url) }
                 .onSuccess { d ->
                     details = d
-                    if (Account.signedIn) launch { subscribed = runCatching { InnerTube.channelSubscribed(d.id) }.getOrNull() }
+                    subscribed = LocalHistory.isSubscribed(d.id) || LocalHistory.isSubscribed(d.url)
+                    if (Account.signedIn) {
+                        launch {
+                            runCatching { InnerTube.channelSubscribed(d.id) }.getOrNull()?.let { subscribed = it }
+                        }
+                    }
                     runCatching { YouTube.channelVideos(d, null) }
                         .onSuccess { p -> videos = p.videos; next = p.next }
                         .onFailure { error = YouTube.friendlyError(it) }
@@ -100,12 +105,18 @@ class ChannelState(val url: String, private val scope: CoroutineScope) {
     }
 
     fun toggleSubscribe(onError: (String) -> Unit) {
-        val id = details?.id ?: return
-        val before = subscribed ?: return
-        subscribed = !before
-        scope.launch {
-            runCatching { InnerTube.setSubscribed(id, !before) }
-                .onFailure { subscribed = before; onError("Couldn't update your subscription.") }
+        val d = details ?: return
+        val before = subscribed ?: false
+        val nextSub = !before
+        subscribed = nextSub
+        LocalHistory.setSubscribed(ChannelRef(d.id, d.name, d.avatar, d.url), nextSub)
+        if (Account.signedIn) {
+            scope.launch {
+                runCatching { InnerTube.setSubscribed(d.id, nextSub) }
+                    .onFailure { subscribed = before; onError("Couldn't update your subscription.") }
+            }
+        } else {
+            onError(if (nextSub) "Following ${d.name}" else "Unfollowed ${d.name}")
         }
     }
 }
