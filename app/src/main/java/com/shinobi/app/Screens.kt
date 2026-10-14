@@ -69,6 +69,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.Key
@@ -126,7 +127,8 @@ fun HomeScreen(
     }
 
     CollapsingHeaderLayout(
-        resetKey = scrollToTop to (if (signedIn) lib.home.generation else personalized.generation),
+        // Only the user's own refresh resets the header; a background load must not yank it.
+        resetKey = scrollToTop to (if (signedIn) lib.home.generation else personalized.refreshToken),
         header = {
             ScreenHeader(title = "Shinobi", brandMark = true) {
                 CircleAction(Icons.Rounded.Search, Loc.t("Search"), onSearch)

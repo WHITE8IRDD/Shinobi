@@ -127,6 +127,10 @@ class ShortsFeedState(private val scope: CoroutineScope) {
     private var moreJob: Job? = null
     private var nextToken: Pair<String, String>? = null
     private var pageCounter = 0
+    /** Set when a page adds nothing new, so the feed stops asking for more of the same. */
+    private var exhausted = false
+
+    val hasMore: Boolean get() = !exhausted
 
     private val fallbackTopics = listOf(
         "satisfying science #shorts",
@@ -160,11 +164,13 @@ class ShortsFeedState(private val scope: CoroutineScope) {
         val next = topic?.takeIf { it != selectedTopic }
         selectedTopic = next
         shorts = emptyList()
+        exhausted = false
         loadInitial()
     }
 
     fun refresh() {
         shorts = emptyList()
+        exhausted = false
         loadInitial()
     }
 
@@ -212,7 +218,7 @@ class ShortsFeedState(private val scope: CoroutineScope) {
     }
 
     fun loadMore(seedItem: VideoItem? = null) {
-        if (loading || moreJob?.isActive == true) return
+        if (loading || exhausted || moreJob?.isActive == true) return
         val tokenPair = nextToken
         val queries = buildQueries(seedItem)
         moreJob = scope.launch {
@@ -245,6 +251,11 @@ class ShortsFeedState(private val scope: CoroutineScope) {
                     val added = gathered.filter { it.id.isNotBlank() && it.id !in LocalHistory.dislikedIds && seen.add(it.id) }
                     if (added.isNotEmpty()) {
                         shorts = shorts + added
+                    } else if (gathered.isNotEmpty()) {
+                        // Everything the page offered was already on screen: this query is spent.
+                        exhausted = true
+                    } else {
+                        exhausted = true
                     }
                 }
             }
@@ -1084,7 +1095,6 @@ private fun ShortPageContent(
             }
         }
 
-        }
         }
 
         // Bottom thin progress bar

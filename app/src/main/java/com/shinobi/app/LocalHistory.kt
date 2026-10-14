@@ -333,38 +333,64 @@ object LocalHistory {
 
     // ── Persistence helpers ──
 
+    /**
+     * Persistence runs on one background thread: recording a video happens on the tap that
+     * opens it (and again when its details land), which is exactly when the app must not be
+     * serializing a hundred history entries on the main thread. State is still updated
+     * synchronously, so every screen sees the change immediately.
+     */
+    private val disk = java.util.concurrent.Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "shinobi-history").apply { isDaemon = true }
+    }
+
     private fun persistEntries() {
-        val array = JSONArray()
-        entries.forEach { entry ->
-            array.put(entry.video.toJson().put("watchedAt", entry.watchedAtMs))
+        val snapshot = entries
+        val p = prefs ?: return
+        disk.execute {
+            val array = JSONArray()
+            snapshot.forEach { entry ->
+                array.put(entry.video.toJson().put("watchedAt", entry.watchedAtMs))
+            }
+            p.edit().putString(KEY_ENTRIES, array.toString()).apply()
         }
-        prefs?.edit()?.putString(KEY_ENTRIES, array.toString())?.apply()
     }
 
     private fun persistQueries() {
-        val array = JSONArray()
-        recentQueries.forEach { array.put(it) }
-        prefs?.edit()?.putString(KEY_QUERIES, array.toString())?.apply()
+        val snapshot = recentQueries
+        val p = prefs ?: return
+        disk.execute {
+            val array = JSONArray()
+            snapshot.forEach { array.put(it) }
+            p.edit().putString(KEY_QUERIES, array.toString()).apply()
+        }
     }
 
     private fun persistVideoList(key: String, list: List<VideoItem>) {
-        val array = JSONArray()
-        list.forEach { array.put(it.toJson()) }
-        prefs?.edit()?.putString(key, array.toString())?.apply()
+        val snapshot = list
+        val p = prefs ?: return
+        disk.execute {
+            val array = JSONArray()
+            snapshot.forEach { array.put(it.toJson()) }
+            p.edit().putString(key, array.toString()).apply()
+        }
     }
 
     private fun persistChannels() {
-        val array = JSONArray()
-        followedChannels.forEach { ch ->
-            array.put(
-                JSONObject()
-                    .put("id", ch.id)
-                    .put("name", ch.name)
-                    .put("avatar", ch.avatar)
-                    .put("url", ch.url),
-            )
+        val snapshot = followedChannels
+        val p = prefs ?: return
+        disk.execute {
+            val array = JSONArray()
+            snapshot.forEach { ch ->
+                array.put(
+                    JSONObject()
+                        .put("id", ch.id)
+                        .put("name", ch.name)
+                        .put("avatar", ch.avatar)
+                        .put("url", ch.url),
+                )
+            }
+            p.edit().putString(KEY_CHANNELS, array.toString()).apply()
         }
-        prefs?.edit()?.putString(KEY_CHANNELS, array.toString())?.apply()
     }
 
     private fun parseVideoList(raw: String?): List<VideoItem> = runCatching {

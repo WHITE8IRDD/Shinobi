@@ -545,7 +545,7 @@ private fun SkipSegmentPill(segment: SponsorBlock.Segment, enabled: Boolean, mod
         verticalAlignment = Alignment.CenterVertically,
     ) {
         val ink = if (segment.category.color.luminance() > 0.45f) Color(0xFF151515) else Color.White
-        Text(Loc.t("Skip") + " " + Loc.t(segment.category.short)), color = ink, fontSize = 12.sp, fontWeight = FontWeight.Black)
+        Text(Loc.t("Skip") + " " + Loc.t(segment.category.short), color = ink, fontSize = 12.sp, fontWeight = FontWeight.Black)
         Icon(Icons.Rounded.SkipNext, null, tint = ink, modifier = Modifier.size(18.dp))
     }
 }

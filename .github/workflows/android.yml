@@ -130,6 +130,12 @@ jobs:
               NAME=$(echo "$TAG" | tr '-' ' ' | awk '{for(i=1;i<=NF;i++){$i=toupper(substr($i,1,1)) substr($i,2)}}1')
             fi
             SLUG="${NAME// /-}"
+            # "SHINOBI 1.0" names the release, not the product twice: the APKs become
+            # Shinobi-1.0-release.apk rather than Shinobi-SHINOBI-1.0-release.apk.
+            FILE_SLUG="$SLUG"
+            case "${FILE_SLUG^^}" in
+              SHINOBI-*) FILE_SLUG="${FILE_SLUG#*[Ss][Hh][Ii][Nn][Oo][Bb][Ii]-}" ;;
+            esac
             echo "Release tag '$TAG', title '$NAME'"
 
             echo "--- downloaded artifact contents ---"
@@ -142,14 +148,14 @@ jobs:
             fi
 
             mkdir -p publish
-            cp "$RELEASE_APK" "publish/Shinobi-${SLUG}-release.apk"
-            cp "$DEBUG_APK" "publish/Shinobi-${SLUG}-debug.apk"
+            cp "$RELEASE_APK" "publish/Shinobi-${FILE_SLUG}-release.apk"
+            cp "$DEBUG_APK" "publish/Shinobi-${FILE_SLUG}-debug.apk"
             ls -l publish
 
             {
               printf 'Built from the source at this tag by GitHub Actions, with unit tests and both\n'
               printf 'zero-ads guards passing in the same run.\n\n'
-              printf '**Install (sideload):** download `Shinobi-%s-release.apk`, open it on your phone.\n' "$SLUG"
+              printf '**Install (sideload):** download `Shinobi-%s-release.apk`, open it on your phone.\n' "$FILE_SLUG"
               printf 'Allow installing from this source when Android asks. Android 8.0 (API 26) or newer is required.\n'
               printf 'The release APK is signed with the Android Gradle debug signing configuration in `app/build.gradle.kts`.\n'
               printf 'For a first install, sideload normally; to update a copy signed with a different key, uninstall it first.\n\n'
