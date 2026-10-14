@@ -644,8 +644,9 @@ internal fun NavPill(selected: Tab, onSelect: (Tab) -> Unit, modifier: Modifier 
         BoxWithConstraints(Modifier.padding(6.dp)) {
             val tabs = Tab.entries.size
             val inner = maxWidth - NavTabGap * (tabs - 1)
-            // Icon-only tabs: 42–50 dp each, whatever leaves the active tab its 140 dp.
-            val compact = ((inner - NavActiveMinWidth) / (tabs - 1)).coerceIn(42.dp, 50.dp)
+            // Icon-only tabs: 36–50 dp each, whatever leaves the active tab its 140 dp (the
+            // 36 dp floor is only reached on 320 dp screens, where the label room matters more).
+            val compact = ((inner - NavActiveMinWidth) / (tabs - 1)).coerceIn(36.dp, 50.dp)
             val expanded = (inner - compact * (tabs - 1)).coerceAtLeast(compact)
             // Weights, not fixed widths: the row always sums exactly, mid-animation included.
             val activeWeight = (expanded / compact).coerceAtLeast(1f)
@@ -678,7 +679,7 @@ internal fun NavPill(selected: Tab, onSelect: (Tab) -> Unit, modifier: Modifier 
                         contentColor = labelColor,
                     ) {
                         Row(
-                            Modifier.height(50.dp).padding(horizontal = 4.dp),
+                            Modifier.height(50.dp).padding(horizontal = 2.dp),
                             horizontalArrangement = Arrangement.Center,
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
@@ -693,8 +694,8 @@ internal fun NavPill(selected: Tab, onSelect: (Tab) -> Unit, modifier: Modifier 
                                     color = labelColor,
                                     fontWeight = FontWeight.Bold,
                                     baseSize = 14.sp,
-                                    minSize = 9.sp,
-                                    modifier = Modifier.padding(start = 6.dp, end = 2.dp),
+                                    minSize = 8.sp,
+                                    modifier = Modifier.padding(start = 5.dp, end = 2.dp),
                                 )
                             }
                         }

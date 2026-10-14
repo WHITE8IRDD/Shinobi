@@ -53,5 +53,11 @@ class ShinobiApplication : Application(), ImageLoaderFactory {
     override fun newImageLoader(): ImageLoader = ImageLoader.Builder(this)
         .crossfade(180)
         .memoryCache { MemoryCache.Builder(this).maxSizePercent(0.25).build() }
+        // The app's own connection pool: thumbnail hosts stay warm between screens instead
+        // of a second client opening its own connections.
+        .okHttpClient { Net.client }
+        // Thumbnail bytes never change for a given URL; keep them on disk whatever the
+        // headers say, so a relaunch or a revisited list draws from the cache at once.
+        .respectCacheHeaders(false)
         .build()
 }

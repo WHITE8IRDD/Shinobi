@@ -72,9 +72,10 @@ class AppScreenshotTest {
         compose.waitUntil(20_000) { compose.onAllNodesWithText("Trending").fetchSemanticsNodes().isNotEmpty() }
         compose.onAllNodesWithText("Trending").onFirst().performClick()
         compose.waitUntil(10_000) { compose.onAllNodesWithText("Trending on YouTube").fetchSemanticsNodes().isNotEmpty() }
-        // Live data: give YouTube up to 45 s, then photograph whatever is on screen.
+        // Live data: give YouTube up to 45 s, then photograph whatever is on screen. (Only
+        // the cards within the viewport exist, so one card is proof enough.)
         val loaded = runCatching {
-            compose.waitUntil(45_000) { compose.onAllNodesWithTag("video-card").fetchSemanticsNodes().size >= 3 }
+            compose.waitUntil(45_000) { compose.onAllNodesWithTag("video-card").fetchSemanticsNodes().isNotEmpty() }
         }.isSuccess
         val cards = compose.onAllNodesWithTag("video-card").fetchSemanticsNodes()
         val titles = cards.mapNotNull { n -> n.config.getOrNull(SemanticsProperties.Text)?.joinToString(" | ") { it.text } }

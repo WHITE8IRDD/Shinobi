@@ -13,9 +13,9 @@ android {
         minSdk = 26
         targetSdk = 36
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        // SHINOBI 1.5 (product owner, 2026-10-14). A release build is identifiable in About.
-        versionCode = 9
-        versionName = "1.5"
+        // SHINOBI ENHANCED, 1.6 (product owner, 2026-10-14). A release build is identifiable in About.
+        versionCode = 10
+        versionName = "1.6"
     }
 
     buildTypes {
