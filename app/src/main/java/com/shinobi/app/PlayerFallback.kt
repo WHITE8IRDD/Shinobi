@@ -97,7 +97,7 @@ object PlayerFallback {
             .header("X-YouTube-Client-Version", CLIENT_VERSION)
             .apply { if (visitorData.isNotEmpty()) header("X-Goog-Visitor-Id", visitorData) }
             .build()
-        Net.client.newCall(request).execute().use { response ->
+        Net.apiClient.newCall(request).execute().use { response ->
             check(response.isSuccessful) { "HTTP ${response.code}" }
             return JSONObject(response.body!!.string())
         }

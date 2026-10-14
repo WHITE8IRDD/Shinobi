@@ -15,7 +15,7 @@ object SuggestionApi {
         val url = "https://suggestqueries.google.com/complete/search".toHttpUrl().newBuilder()
             .addQueryParameter("client", "firefox").addQueryParameter("ds", "yt")
             .addQueryParameter("hl", language).addQueryParameter("q", query).build()
-        val text = Net.client.newCall(Request.Builder().url(url).build()).awaitText()
+        val text = Net.apiClient.newCall(Request.Builder().url(url).build()).awaitText()
         return withContext(Dispatchers.Default) { parse(text) }
     }
 
@@ -28,18 +28,26 @@ object SuggestionApi {
     }
 }
 
-/** Shared cancellable HTTP adapter; no blocking network work on the composition thread. */
-internal suspend fun okhttp3.Call.awaitText(onHeaders: (okhttp3.Response) -> Unit = {}): String = suspendCancellableCoroutine { continuation ->
+/**
+ * Shared cancellable HTTP adapter; no blocking network work on the composition thread.
+ * A non-2xx answer becomes a classified [NetException] rather than a bare message, so the
+ * screen can say "YouTube is temporarily unavailable" instead of blaming the connection.
+ */
+internal suspend fun okhttp3.Call.awaitText(
+    anonymous: Boolean = true,
+    onHeaders: (okhttp3.Response) -> Unit = {},
+): String = suspendCancellableCoroutine { continuation ->
     continuation.invokeOnCancellation { cancel() }
     enqueue(object : okhttp3.Callback {
         override fun onFailure(call: okhttp3.Call, e: IOException) {
             if (continuation.isActive) continuation.resumeWithException(e)
         }
+
         override fun onResponse(call: okhttp3.Call, response: okhttp3.Response) {
             try {
                 val text = response.use {
                     onHeaders(it)
-                    if (!it.isSuccessful) throw IOException("YouTube returned ${it.code}")
+                    if (!it.isSuccessful) throw NetException.http(it.code, anonymous)
                     it.body?.string().orEmpty()
                 }
                 if (continuation.isActive) continuation.resume(text)

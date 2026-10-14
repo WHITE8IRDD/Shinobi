@@ -140,7 +140,10 @@ class FeedState(
 
     private fun friendly(t: Throwable) = when (t) {
         is NotSignedInException -> Loc.t("You're signed out.")
-        else -> t.message?.takeIf { it.startsWith("YouTube") } ?: YouTube.friendlyError(t)
+        // A NetException carries the wording that matches its real cause; everything else
+        // goes through the extractor's own factual refusals first.
+        is NetException -> NetErrors.message(t.failure, t.code)
+        else -> YouTube.friendlyError(t)
     }
 }
 

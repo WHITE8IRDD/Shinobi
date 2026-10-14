@@ -271,6 +271,15 @@ class PersonalizedHomeState(
         private set
     var error by mutableStateOf<String?>(null)
         private set
+    /**
+     * True while an automatic retry is in flight. The feed keeps its current cards and shows
+     * a quiet note instead of replacing the page with an error the user has to dismiss.
+     */
+    var retrying by mutableStateOf(false)
+        private set
+    /** Bumped when the network returns, so the screen can reload without a tap. */
+    var networkSeen by mutableIntStateOf(0)
+        private set
     var generation by mutableIntStateOf(0)
         private set
     var refreshToken by mutableIntStateOf(0)
@@ -303,7 +312,13 @@ class PersonalizedHomeState(
 
     private fun refresh(explicit: Boolean) {
         job?.cancel()
-        if (explicit) refreshToken++
+        // "Try again" means it: forget which fallback route last answered and ask the
+        // platform whether the network is really up, rather than trusting a stale reading.
+        if (explicit) {
+            refreshToken++
+            InnerTubeRoutes.reset()
+            Connectivity.recheck()
+        }
         val history = RecommendationMixer.diverseSeeds(LocalHistory.entries.filter { it.watchedMs >= 5_000 }.map { it.video }, 3)
         val likes = RecommendationMixer.diverseSeeds(LocalHistory.likedVideos.filter { liked -> history.none { it.id == liked.id } }, 2)
         topics = TasteEngine.buildTasteSeeds(LocalHistory.entries, LocalHistory.recentQueries).topicPills
@@ -360,14 +375,8 @@ class PersonalizedHomeState(
             if (append) videos.map { it.id } + shorts.map { it.id } else emptyList()
         job = scope.launch {
             try {
-                val loaded = coroutineScope {
-                    requested.map { source -> async(Dispatchers.IO) {
-                        try { fetch(source) } catch (e: kotlinx.coroutines.CancellationException) { throw e }
-                        catch (_: Exception) { null }
-                    } }.awaitAll().filterNotNull()
-                }
+                val loaded = fetchWithRetry(requested, append)
                 kotlinx.coroutines.currentCoroutineContext().ensureActive()
-                if (loaded.isEmpty()) throw java.io.IOException(Loc.t("Couldn't reach YouTube"))
                 val ranked = kotlinx.coroutines.withContext(Dispatchers.Default) {
                     fun rank(short: Boolean): List<VideoItem> {
                         val inputs = loaded.map { (src, page) ->
@@ -390,7 +399,9 @@ class PersonalizedHomeState(
                 exhausted = ranked.first.isEmpty() && ranked.second.isEmpty()
                 if (videos.isEmpty() && shorts.isEmpty()) error = Loc.t("No suggestions available. Try again later.")
                 generation++
-                // No speculative stream extraction for every feed refresh: it competes with playback.
+                // Warm the first two videos so the very first tap opens instantly. Bounded to
+                // two, on the single-threaded prefetcher, so it never competes with playback.
+                if (!append) ranked.first.take(2).forEach { StreamCache.prefetch(it.id) }
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -400,9 +411,55 @@ class PersonalizedHomeState(
                 if (kotlinx.coroutines.currentCoroutineContext().isActive) {
                     loading = false
                     refreshing = false
+                    retrying = false
                 }
             }
         }
+    }
+
+    /**
+     * Fetches every source, then retries the ones that came back empty with exponential
+     * backoff before an error is allowed to reach the screen.
+     *
+     * A failed request is not a dead connection, and one dropped source is not a failed page:
+     * whatever did arrive is ranked and shown, and only a page where *nothing* arrived — after
+     * [Retry.FEED_ATTEMPTS] attempts across the whole InnerTube route ladder — becomes an
+     * error. That error then names the real cause instead of blaming the phone.
+     */
+    private suspend fun fetchWithRetry(requested: List<HomeSource>, append: Boolean): List<Loaded> {
+        var loaded = emptyList<Loaded>()
+        var failure: Throwable? = null
+        for (attempt in 1..Retry.FEED_ATTEMPTS) {
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            val results = coroutineScope {
+                requested.map { source -> async(Dispatchers.IO) {
+                    try { fetch(source) to null }
+                    catch (e: kotlinx.coroutines.CancellationException) { throw e }
+                    catch (e: Exception) { null to e }
+                } }.awaitAll()
+            }
+            val ok = results.mapNotNull { it.first }
+            failure = results.mapNotNull { it.second }.firstOrNull() ?: failure
+            loaded = (loaded + ok).distinctBy { it.source.key }
+            if (loaded.isNotEmpty()) return loaded
+            if (attempt == Retry.FEED_ATTEMPTS) break
+            // Nothing at all arrived: wait briefly for the network, then back off and retry.
+            retrying = true
+            if (!append) Connectivity.awaitOnline(Retry.OFFLINE_WAIT_MS)
+            kotlinx.coroutines.delay(Retry.backoffMs(attempt, Retry.BASE_MS, Retry.MAX_MS))
+        }
+        retrying = false
+        throw NetErrors.asException(failure)
+    }
+
+    /**
+     * Reloads on its own when the connection returns after a failure. Called from the screen
+     * so the retry belongs to the composition that is actually showing the error.
+     */
+    fun reloadIfStaleAfterNetworkChange() {
+        if (loading || error == null) return
+        networkSeen++
+        refresh(explicit = false)
     }
 }
 

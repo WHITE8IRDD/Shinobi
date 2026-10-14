@@ -257,7 +257,16 @@ object YouTube {
         }
     }
 
-    /** Turns extractor failures into a sentence a person can act on. */
+    /**
+     * Turns extractor and transport failures into a sentence a person can act on.
+     *
+     * The rule this exists to enforce (owner report, 2026-10-14): **"check your connection"
+     * is only ever said when the platform reports no usable network.** An ordinary API
+     * failure — a 5xx, a throttle, a bot check, a timeout, a DNS or TLS problem — used to
+     * arrive here as a bare [IOException] and was reported as a dead connection, which was
+     * simply untrue on a phone with working Wi-Fi. [NetErrors] classifies the cause and names
+     * it instead, and the transport retries the transient ones before this is ever reached.
+     */
     fun friendlyError(t: Throwable): String = when (t) {
         is AgeRestrictedContentException -> Loc.t("This video is age-restricted and needs a YouTube account to watch.")
         is GeographicRestrictionException -> Loc.t("This video isn't available in your country.")
@@ -270,9 +279,16 @@ object YouTube {
             if (t.message.orEmpty().contains("member", ignoreCase = true) || t is org.schabi.newpipe.extractor.exceptions.PaidContentException)
                 Loc.t("This is a members-only video. Shinobi can't play members-only videos yet.")
             else Loc.t("This video isn't available.")
+        // The extractor's own factual refusals keep their wording; anything that reached here
+        // as a transport failure is classified against the real network state.
         is ReCaptchaException -> Loc.t("YouTube is rate-limiting requests right now. Try again in a minute.")
-        is IOException -> Loc.t("Couldn't reach YouTube. Check your connection.")
-        else -> Loc.t("Something went wrong loading this. Try again.")
+        else -> {
+            val failure = NetErrors.classify(t)
+            val code = (t as? NetException)?.code ?: -1
+            // A content-level extractor exception outranks the transport classification.
+            if (failure == NetFailure.Unknown && t !is IOException) Loc.t("Something went wrong loading this. Try again.")
+            else NetErrors.message(failure, code)
+        }
     }
 }
 
