@@ -27,35 +27,36 @@ class RecommendationsTest {
 
     @Test fun emptyHistoryProducesNoSeeds() {
         val seeds = TasteEngine.buildTasteSeeds(
-            watched = emptyList(),
-            searches = emptyList(),
-            followed = emptyList(),
+            entries = emptyList(),
+            recentQueries = emptyList(),
         )
-        assertTrue(seeds.latestVideoIds.isEmpty())
-        assertTrue(seeds.searchQueries.isEmpty())
+        assertTrue(seeds.seedVideoIds.isEmpty())
+        assertTrue(seeds.tasteQueries.isEmpty())
         assertTrue(seeds.topicPills.isEmpty())
     }
 
     @Test fun latestWatchedVideosDriveTasteQueriesAndTopics() {
-        val watched = listOf(
-            video("vid00000001", "Rust Async Programming Deep Dive", channel = "No Boilerplate"),
-            video("vid00000002", "Building a Compiler in Rust", channel = "Jon Gjengset"),
-            video("vid00000003", "Linux Kernel Memory Management", channel = "Kernel Dev"),
+        val entries = listOf(
+            LocalHistoryEntry(video("vid00000001", "Rust Async Programming Deep Dive", channel = "No Boilerplate"), 3000L),
+            LocalHistoryEntry(video("vid00000002", "Building a Compiler in Rust", channel = "Jon Gjengset"), 2000L),
+            LocalHistoryEntry(video("vid00000003", "Linux Kernel Memory Management", channel = "Kernel Dev"), 1000L),
         )
         val seeds = TasteEngine.buildTasteSeeds(
-            watched = watched,
-            searches = listOf("systems programming"),
-            followed = emptyList(),
+            entries = entries,
+            recentQueries = listOf("systems programming"),
         )
-        assertEquals(listOf("vid00000001", "vid00000002", "vid00000003"), seeds.latestVideoIds)
-        assertTrue("expected systems programming in queries: ${seeds.searchQueries}",
-            seeds.searchQueries.any { it.contains("systems programming", ignoreCase = true) })
-        assertTrue("expected Rust in topic pills: ${seeds.topicPills}",
-            seeds.topicPills.any { it.equals("Rust", ignoreCase = true) } ||
-                seeds.topicPills.any { it.contains("Boilerplate", ignoreCase = true) })
+        assertEquals(listOf("vid00000001", "vid00000002", "vid00000003"), seeds.seedVideoIds)
+        assertTrue(
+            "expected systems programming in queries: ${seeds.tasteQueries}",
+            seeds.tasteQueries.any { it.contains("systems programming", ignoreCase = true) },
+        )
+        assertTrue(
+            "expected Rust or Boilerplate in topic pills: ${seeds.topicPills}",
+            seeds.topicPills.any { it.contains("Rust", ignoreCase = true) || it.contains("Boilerplate", ignoreCase = true) },
+        )
     }
 
-    @Test fun interleaveFiltersWatchedAndDislikedAndBalancesSources() {
+    @Test fun interleaveFiltersWatchedAndDislikedAndWeightsLatestSource() {
         val r1 = video("rel00000001", "Related 1")
         val r2 = video("rel00000002", "Related 2")
         val rWatched = video("wat00000001", "Already Watched")
@@ -64,10 +65,12 @@ class RecommendationsTest {
         val c1 = video("chn00000001", "Channel Upload 1")
 
         val merged = TasteEngine.interleaveRecommendations(
-            relatedBuckets = listOf(listOf(rWatched, r1, r2)),
-            topicBuckets = listOf(listOf(tDisliked, t1)),
-            channelBuckets = listOf(listOf(c1)),
-            excludeIds = setOf("wat00000001"),
+            sources = listOf(
+                listOf(rWatched, r1, r2),
+                listOf(tDisliked, t1),
+                listOf(c1),
+            ),
+            watchedIds = setOf("wat00000001"),
             dislikedIds = setOf("dis00000001"),
         )
 
@@ -80,9 +83,12 @@ class RecommendationsTest {
     @Test fun separateShortsAndVideosSplitsByFlagAndDuration() {
         val normal = video("norm0000001", "Full Documentary", durationSec = 1800, isShort = false)
         val flaggedShort = video("shrt0000001", "Quick Tip", durationSec = 45, isShort = true)
-        val verticalThumbShort = video("shrt0000002", "Short Clip #shorts", durationSec = 30, isShort = false)
+        val hashtagShort = video("shrt0000002", "Short Clip #shorts", durationSec = 30, isShort = false)
 
-        val (videos, shorts) = TasteEngine.separateShortsAndVideos(listOf(normal, flaggedShort, verticalThumbShort))
+        val (videos, shorts) = TasteEngine.separateShortsAndVideos(
+            candidates = listOf(normal, flaggedShort, hashtagShort),
+            explicitShorts = emptyList(),
+        )
         assertEquals(listOf("norm0000001"), videos.map { it.id })
         assertEquals(listOf("shrt0000001", "shrt0000002"), shorts.map { it.id })
         assertTrue(shorts.all { it.isShort })
