@@ -411,6 +411,7 @@ class PersonalizedHomeState(private val scope: CoroutineScope) {
                         watchedIds,
                         LocalHistory.dislikedIds,
                     )
+                    val before = videos.size + shorts.size
                     if (moreVideos.isNotEmpty()) {
                         videos = (videos + moreVideos).distinctBy { it.id }
                         moreVideos.forEach { shownIds += it.id }
@@ -419,8 +420,9 @@ class PersonalizedHomeState(private val scope: CoroutineScope) {
                         shorts = (shorts + moreShorts).distinctBy { it.id }
                     }
                     // A page that adds nothing means the feed is spent: without this the
-                    // footer could ask for the next page forever.
-                    if (moreVideos.isEmpty() && moreShorts.isEmpty()) exhausted = true
+                    // footer could ask for the next page forever. A page that only repeated
+                    // what is already on screen counts as nothing.
+                    if (videos.size + shorts.size == before) exhausted = true
                 }
             }
             loading = false

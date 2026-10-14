@@ -271,6 +271,9 @@ private fun PersonalizedHomeContent(
                             action = { PillButton(Loc.t("Try again"), state::refresh) },
                         )
                     }
+                } else if (state.loading) {
+                    // The first load draws its own shape straight away instead of an empty page.
+                    item(key = "home-skeleton") { ListSkeleton() }
                 } else if (!state.loading) {
                     item(key = "home-empty") {
                         EmptyState(

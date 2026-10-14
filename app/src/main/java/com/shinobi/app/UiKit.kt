@@ -399,6 +399,31 @@ fun ResumeBar(videoId: String, modifier: Modifier = Modifier) {
     }
 }
 
+/**
+ * Placeholder cards for a list that is still on its way. Static tonal shapes: drawn once, no
+ * shimmer and no repeating animation, so a cold start never spends frames on a placeholder.
+ */
+@Composable
+fun ListSkeleton(rows: Int = 4, modifier: Modifier = Modifier) {
+    val block = MaterialTheme.colorScheme.surfaceContainerHighest
+    Column(modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+        repeat(rows) {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(16f / 9f)
+                    .clip(RoundedCornerShape(22.dp))
+                    .background(block),
+            )
+            Spacer(Modifier.height(12.dp))
+            Box(Modifier.fillMaxWidth(0.62f).height(14.dp).clip(CircleShape).background(block))
+            Spacer(Modifier.height(8.dp))
+            Box(Modifier.fillMaxWidth(0.38f).height(12.dp).clip(CircleShape).background(block))
+            Spacer(Modifier.height(22.dp))
+        }
+    }
+}
+
 // ── Empty / error states & action buttons ──────────────────────────────────────
 
 @Composable
