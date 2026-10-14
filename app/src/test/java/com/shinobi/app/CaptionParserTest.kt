@@ -14,6 +14,16 @@ class CaptionParserTest {
         assertEquals(listOf(CaptionCue(250, 1_750, "Hello & world!")), cues)
     }
 
+    /** Auto-captions carry one word per <s> span, sometimes with nothing between the tags. */
+    @Test
+    fun keepsAutoCaptionWordSpansApart() {
+        val cues = CaptionParser.parse(
+            """<transcript><text start="1" dur="2"><s>hello</s><s>world</s></text></transcript>""",
+        )
+
+        assertEquals(listOf(CaptionCue(1_000, 3_000, "hello world")), cues)
+    }
+
     @Test
     fun parsesTtmlMillisecondAttributesAndClockTimes() {
         val cues = CaptionParser.parse(

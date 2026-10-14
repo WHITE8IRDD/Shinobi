@@ -5,6 +5,15 @@ on:
     branches: [main, "arena/**"]
   pull_request:
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag, e.g. draft-1 (leave empty to build only)"
+        required: false
+        default: ""
+      name:
+        description: "Release name, e.g. Draft 1"
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -17,7 +26,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
@@ -25,13 +34,122 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Run tests and assemble APKs
-        run: ./gradlew testDebugUnitTest assembleDebug assembleRelease --console=plain
+      - name: Zero-ads and branding guard
+        run: |
+          # The pattern literals are split so this script cannot match itself.
+          OLD_BRAND="ski""pii"
+          if grep -rniI "$OLD_BRAND" --exclude-dir=.git . ; then
+            echo "::error::A removed brand name reappeared in the repository."
+            exit 1
+          fi
+          AD_SDKS="admob|applovin|ironsource|mopub|chartboost|vungle|startapp|inmobi|play-services-ads|facebook-android-sdk|unity3d.ads|com.google.ads|ads-identifier|crashlytics|firebase-analytics|mixpanel|amplitude|com.segment.analytics"
+          if grep -rniE "$AD_SDKS" build.gradle.kts settings.gradle.kts gradle.properties app/build.gradle.kts app/src/main/AndroidManifest.xml ; then
+            echo "::error::An advertising or tracking SDK reference appeared in the build configuration."
+            exit 1
+          fi
+          echo "No advertising, tracking or removed-brand references found."
+
+      - name: Zero-ads dependency guard
+        run: |
+          ./gradlew :app:dependencies --configuration releaseRuntimeClasspath --console=plain > deps.txt
+          AD_SDKS="admob|applovin|ironsource|mopub|chartboost|vungle|startapp|inmobi|play-services-ads|facebook-android-sdk|unity3d.ads|ads-identifier|crashlytics|firebase|mixpanel|amplitude|com.segment.analytics"
+          if grep -iE "$AD_SDKS" deps.txt ; then
+            echo "::error::An advertising or tracking SDK is on the release runtime classpath."
+            exit 1
+          fi
+          echo "Release runtime classpath is free of advertising and tracking SDKs."
+
+      - name: Unit tests
+        run: |
+          set -o pipefail
+          ./gradlew testDebugUnitTest --console=plain 2>&1 | tee -a build.log
+
+      - name: Assemble APKs
+        run: |
+          set -o pipefail
+          ./gradlew assembleDebug assembleRelease --console=plain 2>&1 | tee -a build.log
+
+      - name: Publish failure log as annotations
+        if: failure()
+        run: |
+          python3 - <<'PY'
+          import os, re
+          def escape(text):
+              return text.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+          if not os.path.exists("build.log"):
+              print("::error::Gradle produced no build.log")
+              raise SystemExit(0)
+          with open("build.log", "rb") as f:
+              lines = f.read().decode("utf-8", "replace").splitlines()
+          key = [l for l in lines if re.search(r"FAILED|error:|^e: |What went wrong|Caused by|tests? completed|> There were", l)][-40:]
+          if key:
+              print("::error title=failure summary::" + escape("\n".join(key)))
+          tail = "\n".join(lines[-1500:])
+          # GitHub truncates an annotation message at 4096 characters: keep chunks well under.
+          chunks = [tail[i:i + 3800] for i in range(0, len(tail), 3800)][:22]
+          for i, chunk in enumerate(chunks):
+              print(f"::error title=log {i + 1}/{len(chunks)}::{escape(chunk)}")
+          PY
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build.log
+          if-no-files-found: ignore
+          retention-days: 14
 
       - name: Upload APKs
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: shinobi-apks
           path: app/build/outputs/apk/**/*.apk
           if-no-files-found: error
           retention-days: 14
+
+  # Publishing is explicit: run this workflow manually with a tag and a name and the APKs
+  # built by the job above are attached to a GitHub release. Nothing else publishes.
+  release:
+    if: github.event_name == 'workflow_dispatch' && inputs.tag != ''
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download the APKs this run just built
+        uses: actions/download-artifact@v4
+        with:
+          name: shinobi-apks
+          path: apks
+
+      - name: Publish the release with its APKs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+          NAME: ${{ inputs.name }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -e
+          NAME="${NAME:-Official release}"
+          SLUG="${NAME// /-}"
+          mkdir -p publish
+          cp apks/release/app-release.apk "publish/Shinobi-${SLUG}-release.apk"
+          cp apks/debug/app-debug.apk "publish/Shinobi-${SLUG}-debug.apk"
+          ls -l publish
+          cat > notes.md <<EOF
+          Built from the source at this tag by GitHub Actions, with unit tests and both
+          zero-ads guards passing in the same run.
+
+          **Install (sideload):** download \`Shinobi-${SLUG}-release.apk\`, open it on the phone
+          and allow installing from this source when Android asks. Android 8.0 (API 26) or newer
+          is required. The release build is signed with a locally generated key, so it installs
+          over any earlier Shinobi build and needs no account: search, playback, captions and
+          signed-out history work straight away.
+
+          \`Shinobi-${SLUG}-release.apk\` is the minified build made for daily use;
+          \`Shinobi-${SLUG}-debug.apk\` is the same code without minification, useful if a bug
+          needs logs.
+          EOF
+          gh release create "$TAG" --title "$NAME" --notes-file notes.md --target "$SHA" publish/*.apk
