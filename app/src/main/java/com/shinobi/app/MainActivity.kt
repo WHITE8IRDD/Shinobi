@@ -576,6 +576,7 @@ fun ShinobiApp() {
         }
 
         when (player.sheet) {
+            PlayerSheet.Options -> PlayerOptionsSheet(player, onDismiss = { player.sheet = null })
             PlayerSheet.Quality -> QualitySheet(player, onDismiss = { player.sheet = null })
             PlayerSheet.Captions -> CaptionsSheet(player, onDismiss = { player.sheet = null })
             PlayerSheet.Comments -> if (!showPlayer) {

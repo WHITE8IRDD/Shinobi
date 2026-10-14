@@ -26,6 +26,20 @@ object AppSettings {
     const val AUTO_REGION = "auto"
     private var prefs: SharedPreferences? = null
 
+    var autoplayNext by mutableStateOf(false)
+        private set
+    fun setAutoplay(value: Boolean) {
+        autoplayNext = value
+        prefs?.edit()?.putBoolean("autoplay_next", value)?.apply()
+    }
+    var sensitiveFilter by mutableStateOf(false)
+        private set
+    fun setSensitiveFilter(value: Boolean) {
+        sensitiveFilter = value
+        prefs?.edit()?.putBoolean("sensitive_filter", value)?.apply()
+        if (value) FeedPreview.stop()
+    }
+
     private var mixState by mutableStateOf(true)
     private var autoHideState by mutableStateOf(true)
     private var previewsState by mutableStateOf(FeedPreview.ALWAYS)
@@ -106,6 +120,8 @@ object AppSettings {
             // country; a pick other than that default is kept, the default becomes automatic.
             ?: p.getString("trending_country", null)?.takeIf { it != "US" }?.let { Region.normalize(it) }
             ?: AUTO_REGION
+        autoplayNext = p.getBoolean("autoplay_next", false)
+        sensitiveFilter = p.getBoolean("sensitive_filter", false)
         mixState = p.getBoolean(KEY_MIX_SHORTS, true)
         autoHideState = p.getBoolean(KEY_SHORTS_AUTOHIDE, true)
         previewsState = p.getString(KEY_FEED_PREVIEWS, null)?.takeIf { it == FeedPreview.ALWAYS || it == FeedPreview.WIFI || it == FeedPreview.OFF } ?: FeedPreview.ALWAYS

@@ -66,6 +66,9 @@ data class CaptionTrack(
 )
 
 @Immutable
+data class VideoChapter(val title: String, val startMs: Long, val thumbnail: String? = null)
+
+@Immutable
 data class VideoDetails(
     val item: VideoItem,
     val description: String,
@@ -81,6 +84,7 @@ data class VideoDetails(
     val aspect: Float? = null,
     /** Available caption tracks, ordered with human-created tracks before auto captions. */
     val captions: List<CaptionTrack> = emptyList(),
+    val chapters: List<VideoChapter> = emptyList(),
 )
 
 @Immutable
@@ -195,6 +199,9 @@ object YouTube {
             quality = picked.playedHeight?.let { "${it}p" },
             qualities = StreamSelection.heights(info),
             aspect = aspect,
+            chapters = info.streamSegments.orEmpty().filter { it.startTimeSeconds >= 0 }
+                .map { VideoChapter(it.title, it.startTimeSeconds * 1000L, it.previewUrl) }
+                .distinctBy { it.startMs }.sortedBy { it.startMs },
             captions = info.subtitles
                 .asSequence()
                 .filter { it.isUrl && it.content.startsWith("https://", ignoreCase = true) }
@@ -345,6 +352,7 @@ object StreamCache {
         get(id)?.let { return it }
         val mine = FutureTask {
             StreamInfo.getInfo(ServiceList.YouTube, YouTube.watchUrl(id)).also {
+                if (entries.size >= 48) entries.entries.minByOrNull { entry -> entry.value.loadedAt }?.key?.let(entries::remove)
                 entries[id] = Entry(it, System.currentTimeMillis())
                 Net.noteMediaHost(StreamSelection.pick(it).let { p -> (p.video ?: p.muxed)?.content })
             }
@@ -363,9 +371,12 @@ object StreamCache {
     /** Background warm-up; one at a time so prefetches never crowd a real open. */
     private val prefetcher = Executors.newSingleThreadExecutor()
 
+    private val queued = ConcurrentHashMap.newKeySet<String>()
     fun prefetch(id: String) {
-        if (get(id) != null || inflight.containsKey(id)) return
-        prefetcher.execute { runCatching { getOrLoad(id) } }
+        if (get(id) != null || inflight.containsKey(id) || queued.size >= 4 || !queued.add(id)) return
+        prefetcher.execute {
+            try { runCatching { getOrLoad(id) } } finally { queued.remove(id) }
+        }
     }
 }
 

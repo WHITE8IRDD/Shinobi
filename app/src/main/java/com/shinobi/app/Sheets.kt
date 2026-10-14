@@ -569,6 +569,13 @@ fun FeedSettings() {
             checked = AppSettings.shortsAutoHide,
             onCheckedChange = { AppSettings.shortsAutoHide = it },
         )
+        SettingSwitchRow(
+            icon = Icons.Rounded.VisibilityOff,
+            title = Loc.t("Sensitive thumbnail filter (experimental)"),
+            subtitle = Loc.t("On-device, conservative explicit-image detection. May miss suggestive content or make mistakes. Tap Show anyway to reveal. Home video previews are off while filtering."),
+            checked = AppSettings.sensitiveFilter,
+            onCheckedChange = AppSettings::setSensitiveFilter,
+        )
         Spacer(Modifier.height(12.dp))
         Text(Loc.t("Previews on Home"), fontWeight = FontWeight.Bold, fontSize = 14.sp)
         Spacer(Modifier.height(4.dp))

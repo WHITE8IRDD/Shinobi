@@ -25,3 +25,10 @@ text is included as `LICENSE`.
 
 The links above point to each project's license and attribution materials. No paid APIs,
 proprietary SDKs, or ad/analytics SDKs are included.
+
+Optional on-device thumbnail classification (experimental):
+Yahoo Open NSFW, BSD-2-Clause, https://github.com/yahoo/open_nsfw
+TensorFlow Lite conversion by devzwy, Apache-2.0:
+https://github.com/devzwy/TensorflowLite-NSFW-Android
+Pinned model provenance and limitations: docs/research/polish-1.7.md.
+The APK ships both licence notices in its assets. Classification is not a safety guarantee.

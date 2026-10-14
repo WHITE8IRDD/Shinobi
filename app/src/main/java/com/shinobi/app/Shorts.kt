@@ -189,15 +189,22 @@ class ShortsFeedState(private val scope: CoroutineScope) {
         seeds.tasteQueries.forEach { q ->
             out.add("$q #shorts")
         }
-        if (out.isEmpty()) {
-            val start = (pageCounter++) % fallbackTopics.size
-            out.add(fallbackTopics[start])
-            out.add(fallbackTopics[(start + 1) % fallbackTopics.size])
+        LocalHistory.likedVideos.take(8).forEach {
+            val query = TasteEngine.extractTasteQuery(it)
+            if (query.isNotBlank()) out.add("$query #shorts")
         }
-        return out.take(3)
+        val round = pageCounter++
+        val personal = out.toList()
+        // Rotate personal seeds instead of querying the same first interest forever.
+        val rotated = if (personal.isEmpty()) emptyList() else
+            personal.drop(round % personal.size) + personal.take(round % personal.size)
+        return (rotated.take(2) + fallbackTopics[round % fallbackTopics.size]).distinct()
     }
 
     private fun loadInitial() {
+        moreJob?.cancel()
+        nextToken = null
+        exhausted = false
         loading = true
         error = null
         job?.cancel()
@@ -212,6 +219,7 @@ class ShortsFeedState(private val scope: CoroutineScope) {
                 jumpGeneration++
                 items.take(3).forEach { StreamCache.prefetch(it.id) }
             }.onFailure {
+                if (it is kotlinx.coroutines.CancellationException) throw it
                 error = YouTube.friendlyError(it)
             }
             loading = false
@@ -239,17 +247,20 @@ class ShortsFeedState(private val scope: CoroutineScope) {
                     val gathered = buildList {
                         contRes?.second?.let { p ->
                             addAll(p.shorts)
-                            addAll(p.videos.filter { it.isShort || it.durationSec in 1..60 }.map { it.copy(isShort = true) })
+                            addAll(p.videos.filter { it.isShort }.map { it.copy(isShort = true) })
                         }
                         freshRes?.second?.let { p ->
                             addAll(p.shorts)
-                            addAll(p.videos.filter { it.isShort || it.durationSec in 1..60 }.map { it.copy(isShort = true) })
+                            addAll(p.videos.filter { it.isShort }.map { it.copy(isShort = true) })
                         }
                     }
                     nextToken = contRes?.second?.next?.let { contRes.first to it }
                         ?: freshRes?.second?.next?.let { freshRes.first to it }
                     val seen = shorts.mapTo(HashSet()) { it.id }
-                    val added = gathered.filter { it.id.isNotBlank() && it.id !in LocalHistory.dislikedIds && seen.add(it.id) }
+                    val added = ShortsMixer.mix(
+                        listOf(contRes?.second?.shorts.orEmpty(), freshRes?.second?.shorts.orEmpty()),
+                        seen + LocalHistory.dislikedIds, shorts.takeLast(8),
+                    )
                     if (added.isNotEmpty()) {
                         shorts = shorts + added
                     } else if (gathered.isNotEmpty()) {
@@ -268,10 +279,10 @@ class ShortsFeedState(private val scope: CoroutineScope) {
             async(Dispatchers.IO) {
                 val page = runCatching { InnerTube.searchPage(q) }.getOrNull()
                 val items = if (page != null && (page.shorts.isNotEmpty() || page.videos.isNotEmpty())) {
-                    page.shorts + page.videos.filter { it.isShort || it.durationSec in 1..90 }.map { it.copy(isShort = true) }
+                    page.shorts + page.videos.filter { it.isShort }.map { it.copy(isShort = true) }
                 } else {
                     runCatching { YouTube.search(q) }.getOrDefault(emptyList())
-                        .filter { it.isShort || it.durationSec in 1..90 }
+                        .filter { it.isShort }
                         .map { it.copy(isShort = true) }
                 }
                 Triple(q, items, page?.next)
@@ -291,7 +302,7 @@ class ShortsFeedState(private val scope: CoroutineScope) {
         }
         val next = pages.firstNotNullOfOrNull { (q, _, tok) -> tok?.let { q to it } }
         if (combined.isEmpty()) throw java.io.IOException(Loc.t("Couldn't load Shorts"))
-        combined.values.toList() to next
+        ShortsMixer.mix(pages.map { it.second }, disliked) to next
     }
 }
 
@@ -389,7 +400,7 @@ private fun ShortShelfCard(short: VideoItem, onClick: () -> Unit) {
             .background(c.surfaceContainerHighest)
             .border(1.dp, c.outlineVariant.copy(alpha = 0.22f), shape),
     ) {
-        Thumbnail(thumbUrl, Modifier.fillMaxSize(), radius = 22)
+        SensitiveThumbnail(thumbUrl, Modifier.fillMaxSize(), radius = 22)
         // Bottom gradient scrim so title and view count stay readable over any frame.
         Box(
             Modifier
@@ -502,13 +513,21 @@ fun ShortsScreen(
     }
 
     // Play the active Short and prefetch the next two pages.
-    val currentShort = shorts.getOrNull(pagerState.currentPage)
+    val currentShort = shorts.getOrNull(pagerState.settledPage)
     LaunchedEffect(currentShort?.id, showSurface) {
         if (currentShort != null && showSurface) {
             commentsOpenFor = null
             player.openShort(currentShort)
-            shorts.getOrNull(pagerState.currentPage + 1)?.let { StreamCache.prefetch(it.id) }
-            shorts.getOrNull(pagerState.currentPage + 2)?.let { StreamCache.prefetch(it.id) }
+            shorts.getOrNull(pagerState.settledPage + 1)?.let { StreamCache.prefetch(it.id) }
+            shorts.getOrNull(pagerState.settledPage + 2)?.let { StreamCache.prefetch(it.id) }
+        }
+    }
+
+    // Wait for the current item to actually land in the service before replacing the next
+    // playlist slot. repeat-one keeps a Short looping rather than auto-advancing the pager.
+    LaunchedEffect(currentShort?.id, player.loading, player.current?.id, shorts.size, showSurface) {
+        if (showSurface && !player.loading && player.current?.id == currentShort?.id) {
+            player.preloadShort(shorts.getOrNull(pagerState.settledPage + 1))
         }
     }
 
@@ -577,7 +596,7 @@ fun ShortsScreen(
                     modifier = Modifier.fillMaxSize(),
                 ) { page ->
                     val item = shorts.getOrNull(page) ?: return@VerticalPager
-                    val isActivePage = page == pagerState.currentPage && showSurface
+                    val isActivePage = page == pagerState.settledPage && showSurface
                     ShortPageContent(
                         item = item,
                         player = player,
@@ -586,6 +605,7 @@ fun ShortsScreen(
                         bottomInset = bottomInset,
                         onOpenComments = {
                             view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
+                            player.comments.load(item.id)
                             commentsOpenFor = item.id
                         },
                         onShare = {
@@ -889,7 +909,9 @@ private fun ShortPageContent(
                     .aspectFit(aspect, cover = aspect <= 1.05f)
                     .clipToBounds(),
             ) {
-                LocalVideoSurface.current(Modifier.fillMaxSize())
+                LocalVideoSurface.current(Modifier.fillMaxSize().graphicsLayer {
+                    alpha = if (player.current?.id == item.id && player.firstFrameRendered) 1f else 0f
+                })
             }
         }
 

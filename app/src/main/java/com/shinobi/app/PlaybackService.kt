@@ -116,6 +116,9 @@ class PlaybackService : MediaSessionService() {
             .setSeekBackIncrementMs(10_000)
             .setSeekForwardIncrementMs(10_000)
             .build()
+        // Media3 prepares only the upcoming playlist item, sharing this player's allocator.
+        // No decoder is allocated for an off-screen Shorts page.
+        player.setPreloadConfiguration(ExoPlayer.PreloadConfiguration(3_000_000L))
         val openApp = PendingIntent.getActivity(
             this, 0,
             Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),

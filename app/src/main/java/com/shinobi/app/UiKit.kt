@@ -366,7 +366,7 @@ fun VideoCard(video: VideoItem, onClick: () -> Unit, modifier: Modifier = Modifi
             .padding(6.dp),
     ) {
         Box {
-            Thumbnail(video.thumbnail, Modifier.fillMaxWidth().aspectRatio(16f / 9f))
+            SensitiveThumbnail(video.thumbnail, Modifier.fillMaxWidth().aspectRatio(16f / 9f))
             if (preview) FeedPreviewSurface(Modifier.matchParentSize().clip(RoundedCornerShape(22.dp)))
             DurationPill(video.durationSec, Modifier.align(Alignment.BottomEnd).padding(10.dp))
             ResumeBar(video.id, Modifier.align(Alignment.BottomStart))
@@ -415,7 +415,7 @@ fun VideoRow(video: VideoItem, onClick: () -> Unit, trailing: (@Composable () ->
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(Modifier.width(140.dp)) {
-            Thumbnail(video.thumbnail, Modifier.fillMaxWidth().aspectRatio(16f / 9f), radius = 16)
+            SensitiveThumbnail(video.thumbnail, Modifier.fillMaxWidth().aspectRatio(16f / 9f), radius = 16)
             DurationPill(video.durationSec, Modifier.align(Alignment.BottomEnd).padding(6.dp), small = true)
         }
         Spacer(Modifier.width(12.dp))

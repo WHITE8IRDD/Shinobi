@@ -164,8 +164,27 @@ class PlayerState(private val scope: CoroutineScope) {
             if (controller?.isPlaying == false) controller?.play()
             return
         }
+        controller?.pause()
         known[shortItem.id] = shortItem
         show(shortItem, startPlayback = true)
+    }
+
+    /** Keep just the next Short in the service playlist for bounded Media3 preloading. */
+    fun preloadShort(item: VideoItem?) {
+        if (!inShortsMode || item == null) return
+        val player = controller ?: return
+        val next = player.currentMediaItemIndex + 1
+        if (next < player.mediaItemCount && player.getMediaItemAt(next).mediaId == item.id) return
+        if (next < player.mediaItemCount) player.removeMediaItems(next, player.mediaItemCount)
+        known[item.id] = item
+        player.addMediaItem(mediaItemFor(item))
+    }
+
+    var looping by mutableStateOf(false)
+        private set
+    fun setLooping(value: Boolean) {
+        looping = value
+        controller?.repeatMode = if (value || inShortsMode) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
     }
 
     /** Stops Shorts playback when leaving the Shorts tab so no mini-player is left behind. */
@@ -191,7 +210,7 @@ class PlayerState(private val scope: CoroutineScope) {
         details = null
         error = null
         firstFrameRendered = false
-        videoAspect = 16f / 9f
+        videoAspect = if (item.isShort) 9f / 16f else 16f / 9f
         aspectFromFrames = false
         decodedHeight = null
         playingFormat = null
@@ -218,6 +237,7 @@ class PlayerState(private val scope: CoroutineScope) {
         loadJob = scope.launch {
             runCatching { YouTube.details(item.id) }
                 .onSuccess { d ->
+                    if (current?.id != item.id) return@onSuccess
                     Log.i("ShinobiTime", "details +${android.os.SystemClock.elapsedRealtime() - openedAt}ms")
                     details = d
                     current = d.item.copy(isShort = item.isShort || d.item.isShort)
@@ -228,16 +248,20 @@ class PlayerState(private val scope: CoroutineScope) {
                     if (!aspectFromFrames) d.aspect?.let { videoAspect = it }
                     // Comments wait for the stream data: their request duplicates the video
                     // page fetch and only slowed down the critical path.
-                    comments.load(item.id)
+                    if (!inShortsMode) comments.load(item.id)
                     known[item.id] = current!!
                     if (!d.playable) error = Loc.t("No playable stream was found for this video.")
                     else if (startPlayback) startPlayback(current!!)
                     // The likeliest next taps (up next, the queue head) extract in the background
                     // now, so they start without the extraction wait when the time comes.
-                    queue.firstOrNull()?.let { StreamCache.prefetch(it.id) }
-                    d.related.firstOrNull { !it.isShort && it.id != item.id }?.let { StreamCache.prefetch(it.id) }
+                    if (!inShortsMode) {
+                        queue.firstOrNull()?.let { StreamCache.prefetch(it.id) }
+                        d.related.firstOrNull { !it.isShort && it.id != item.id }?.let { StreamCache.prefetch(it.id) }
+                    }
                 }
                 .onFailure {
+                    if (it is kotlinx.coroutines.CancellationException) throw it
+                    if (current?.id != item.id) return@onFailure
                     Log.w(TAG, "details failed for ${item.id}", it)
                     error = YouTube.friendlyError(it)
                     // Comments wait for details; without this their spinner never stopped.
@@ -262,7 +286,15 @@ class PlayerState(private val scope: CoroutineScope) {
         LocalHistory.record(item)
         val player = controller ?: run { pendingStart = item; return }
         // Pick up where this video was left off (ResumeStore; written by the service).
-        replaceCurrent(player, item, positionMs = ResumeStore.startPosition(item.id))
+        val preloaded = (0 until player.mediaItemCount).firstOrNull { player.getMediaItemAt(it).mediaId == item.id }
+        if (inShortsMode && preloaded != null) {
+            swapping = true
+            try {
+                player.seekTo(preloaded, 0L)
+                if (preloaded > 0) player.removeMediaItems(0, preloaded)
+            } finally { swapping = false }
+            player.prepare()
+        } else replaceCurrent(player, item, positionMs = if (inShortsMode) 0L else ResumeStore.startPosition(item.id))
         player.play()
     }
 
@@ -710,11 +742,19 @@ class PlayerState(private val scope: CoroutineScope) {
     internal val listener = object : Player.Listener {
         override fun onEvents(player: Player, events: Player.Events) {
             syncFromPlayer()
+            looping = !inShortsMode && player.repeatMode == Player.REPEAT_MODE_ONE
             if (events.contains(Player.EVENT_TIMELINE_CHANGED) || events.contains(Player.EVENT_MEDIA_ITEM_TRANSITION)) rebuildQueue()
         }
 
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
             if (mediaItem != null) onPlayerMovedTo(mediaItem)
+        }
+
+        override fun onPlaybackStateChanged(playbackState: Int) {
+            if (playbackState == Player.STATE_ENDED && AppSettings.autoplayNext && !inShortsMode && !looping && queue.isEmpty()) {
+                details?.related?.firstOrNull { !it.isShort && it.id != current?.id && it.id !in LocalHistory.dislikedIds }
+                    ?.let { open(it, expand = expanded) }
+            }
         }
 
         override fun onVideoSizeChanged(videoSize: VideoSize) = takeVideoSize(videoSize)
@@ -803,6 +843,6 @@ fun rememberPlayerState(): PlayerState {
     return state
 }
 
-enum class PlayerSheet { Quality, Captions, Comments, Queue }
+enum class PlayerSheet { Quality, Captions, Comments, Queue, Options }
 
 private const val TAG = "Shinobi"

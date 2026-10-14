@@ -93,7 +93,7 @@ object FeedPreview {
     private var job: Job? = null
 
     /** Whether previews may play right now, per the setting and the connection. */
-    fun allowed(): Boolean = when (AppSettings.feedPreviews) {
+    fun allowed(): Boolean = !AppSettings.sensitiveFilter && when (AppSettings.feedPreviews) {
         OFF -> false
         WIFI -> Net.isUnmetered()
         else -> true

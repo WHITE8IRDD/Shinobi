@@ -32,7 +32,7 @@ object SponsorBlock {
         Outro("outro", "Outro and credits", Color(0xFF0202ED), Action.Mark),
         Preview("preview", "Preview and recap", Color(0xFF008FD6), Action.Mark),
         MusicOffTopic("music_offtopic", "Non-music part of a music video", Color(0xFFFF9900), Action.Off),
-        Filler("filler", "Filler tangent", Color(0xFF7300FF), Action.Off);
+        Filler("filler", "Filler tangent", Color(0xFF7300FF), Action.Mark);
 
         /** For "Skip …" / "Skipped 0:30 …". */
         val short: String get() = when (this) {
@@ -130,6 +130,7 @@ object SponsorBlock {
                 .onFailure { Log.w("Shinobi", "SponsorBlock lookup failed for $videoId (attempt ${attempt + 1})", it) }
                 .getOrNull()
             if (segments != null) {
+                if (cache.size >= 128) cache.keys.firstOrNull()?.let(cache::remove)
                 cache[videoId] = segments
                 return segments
             }
@@ -168,26 +169,34 @@ object SponsorBlock {
             .joinToString("") { "%02x".format(it) }.take(4)
         val categories = JSONArray(Category.entries.map { it.key }).toString()
         val url = "https://sponsor.ajay.app/api/skipSegments/$prefix?categories=" +
-            java.net.URLEncoder.encode(categories, "UTF-8") + "&actionType=skip"
+            java.net.URLEncoder.encode(categories, "UTF-8") + "&actionTypes=%5B%22skip%22%5D"
         val request = Request.Builder().url(url).header("User-Agent", "Shinobi/${BuildConfig.VERSION_NAME}").build()
         api.newCall(request).execute().use { r ->
             if (r.code == 404) return emptyList() // no video with this prefix has segments
             if (!r.isSuccessful) throw java.io.IOException("SponsorBlock ${r.code}")
-            val arr = JSONArray(r.body?.string().orEmpty())
-            for (i in 0 until arr.length()) {
-                val video = arr.optJSONObject(i) ?: continue
-                if (video.optString("videoID") != videoId) continue
-                val segs = video.optJSONArray("segments") ?: return emptyList()
-                return (0 until segs.length()).mapNotNull { j ->
-                    val s = segs.optJSONObject(j) ?: return@mapNotNull null
-                    val cat = Category.of(s.optString("category")) ?: return@mapNotNull null
-                    val range = s.optJSONArray("segment") ?: return@mapNotNull null
-                    val start = (range.optDouble(0) * 1000).toLong()
-                    val end = (range.optDouble(1) * 1000).toLong()
-                    if (end - start < 1000) null else Segment(s.optString("UUID"), cat, start, end)
-                }.sortedBy { it.startMs }
-            }
-            return emptyList()
+            return parse(videoId, r.body?.string().orEmpty())
         }
+    }
+
+    /** Defensive parsing: an invalid community record must never seek the player. */
+    internal fun parse(videoId: String, body: String): List<Segment> {
+        val arr = JSONArray(body)
+        for (i in 0 until arr.length()) {
+            val video = arr.optJSONObject(i) ?: continue
+            if (video.optString("videoID") != videoId) continue
+            val segs = video.optJSONArray("segments") ?: return emptyList()
+            return (0 until segs.length()).mapNotNull { j ->
+                val s = segs.optJSONObject(j) ?: return@mapNotNull null
+                if (s.optString("actionType", "skip") != "skip") return@mapNotNull null
+                val category = Category.of(s.optString("category")) ?: return@mapNotNull null
+                val range = s.optJSONArray("segment") ?: return@mapNotNull null
+                val start = range.optDouble(0)
+                val end = range.optDouble(1)
+                val uuid = s.optString("UUID")
+                if (uuid.isBlank() || !start.isFinite() || !end.isFinite() || start < 0 || end <= start || end > Long.MAX_VALUE / 1000.0) null
+                else Segment(uuid, category, (start * 1000).toLong(), (end * 1000).toLong())
+            }.distinctBy { it.uuid }.sortedBy { it.startMs }
+        }
+        return emptyList()
     }
 }

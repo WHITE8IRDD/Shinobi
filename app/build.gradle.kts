@@ -13,9 +13,9 @@ android {
         minSdk = 26
         targetSdk = 36
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        // SHINOBI ENHANCED, 1.6 (product owner, 2026-10-14). A release build is identifiable in About.
-        versionCode = 10
-        versionName = "1.6"
+        // Playback and feed polish, 1.7.
+        versionCode = 11
+        versionName = "1.7"
     }
 
     buildTypes {
@@ -85,6 +85,7 @@ dependencies {
     implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.26.5")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("io.coil-kt:coil-compose:2.7.0")
+    implementation("org.tensorflow:tensorflow-lite:2.17.0")
     implementation("com.google.guava:guava:33.3.1-android")
 
     // Parser tests use real, checked-in YouTube response fixtures.

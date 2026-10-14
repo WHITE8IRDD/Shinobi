@@ -25,6 +25,14 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.AspectRatio
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.*
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -119,11 +127,13 @@ fun VideoContent(
 ) {
     // Hidden until the video is tapped: opening the player (from the mini-player too) and
     // rotating in or out of fullscreen never pop the controls up.
-    var controlsVisible by remember { mutableStateOf(false) }
+    var controlsVisible by remember(fullscreen, state.current?.id) { mutableStateOf(fullscreen) }
+    var scrubbing by remember { mutableStateOf(false) }
+    var cover by remember { mutableStateOf(false) }
     var touchedAt by remember { mutableLongStateOf(0L) }
     fun touched() { touchedAt = System.nanoTime() }
-    LaunchedEffect(controlsVisible, state.isPlaying, touchedAt) {
-        if (controlsVisible && state.isPlaying) {
+    LaunchedEffect(controlsVisible, state.isPlaying, touchedAt, scrubbing, state.sheet) {
+        if (controlsVisible && state.isPlaying && !scrubbing && state.sheet == null) {
             delay(Motion.ControlsHideMs)
             controlsVisible = false
         }
@@ -206,7 +216,7 @@ fun VideoContent(
                 // As large as fits in whatever box we're given. The portrait stage already has
                 // the video's shape, so bars appear only past its limits (and in fullscreen).
                 .fillMaxSize()
-                .aspectFit(state.videoAspect)
+                .aspectFit(state.videoAspect, cover = fullscreen && cover)
                 .clipToBounds(),
         ) {
             Box(
@@ -263,7 +273,7 @@ fun VideoContent(
                     ),
                 ),
             )
-            val edge = if (fullscreen) Modifier.windowInsetsPadding(WindowInsets.displayCutout).padding(horizontal = 12.dp, vertical = 8.dp) else Modifier
+            val edge = if (fullscreen) Modifier.windowInsetsPadding(WindowInsets.safeDrawing).padding(horizontal = 12.dp, vertical = 8.dp) else Modifier
             Box(Modifier.fillMaxSize().then(edge)) {
                 // Top row: minimize / exit fullscreen, title (fullscreen), quality.
                 Row(
@@ -283,6 +293,14 @@ fun VideoContent(
                         )
                     } else {
                         Spacer(Modifier.weight(1f))
+                    }
+                    GlassButton(Icons.Rounded.Settings, Loc.t("Player options"), enabled) {
+                        touched(); state.sheet = PlayerSheet.Options
+                    }
+                    if (fullscreen) {
+                        GlassButton(Icons.Rounded.AspectRatio, Loc.t(if (cover) "Fit to screen" else "Fill screen"), enabled) {
+                            cover = !cover; touched()
+                        }
                     }
                     // The label is the resolution actually decoded; the requested one until known.
                     (state.decodedHeight?.let { "${it}p" } ?: state.details?.quality)?.let { quality ->
@@ -331,6 +349,14 @@ fun VideoContent(
                 }
                 Column(Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(start = 14.dp, end = 8.dp, bottom = 6.dp)) {
                     var scrubPreview by remember { mutableStateOf<Long?>(null) }
+                    if (scrubPreview != null) {
+                        Text(
+                            formatDuration(scrubPreview!!) + (state.details?.chapters?.lastOrNull { it.startMs <= scrubPreview!! }?.let { " · ${it.title}" } ?: ""),
+                            color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1,
+                            modifier = Modifier.testTag("scrub-preview").background(Color.Black.copy(alpha = 0.75f)).padding(8.dp),
+                        )
+                    }
+                    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         ElapsedText(state, scrubPreview, Color.White, 12.sp, FontWeight.Bold)
                         Text(
@@ -363,9 +389,10 @@ fun VideoContent(
                     PlayerScrubber(
                         state = state,
                         enabled = enabled,
-                        onPreview = { scrubPreview = it; touched() },
-                        onSeek = { scrubPreview = null; state.seekTo(it); touched() },
+                        onPreview = { scrubPreview = it; scrubbing = it != null; touched() },
+                        onSeek = { scrubPreview = null; scrubbing = false; state.seekTo(it); touched() },
                     )
+                    }
                 }
             }
         }
@@ -469,10 +496,9 @@ private fun TonalSkip(icon: ImageVector, description: String, enabled: Boolean, 
 fun Modifier.aspectFit(aspect: Float, cover: Boolean = false) = layout { measurable, constraints ->
     val boxW = constraints.maxWidth.toFloat()
     val boxH = if (constraints.hasBoundedHeight) constraints.maxHeight.toFloat() else boxW / aspect
-    // Height decides when the box is wider than the content (fit) or narrower (cover).
-    val byHeight = (boxW / boxH > aspect) != cover
-    val w = (if (byHeight) boxH * aspect else boxW).roundToInt()
-    val h = (if (byHeight) boxH else boxW / aspect).roundToInt()
+    val fitted = PlayerGeometry.size(boxW.roundToInt(), boxH.roundToInt(), aspect, cover)
+    val w = fitted.width
+    val h = fitted.height
     val placeable = measurable.measure(androidx.compose.ui.unit.Constraints.fixed(w, h))
     layout(boxW.roundToInt(), boxH.roundToInt()) {
         placeable.place(((boxW - w) / 2f).roundToInt(), ((boxH - h) / 2f).roundToInt())
@@ -791,13 +817,13 @@ fun MorphPlayButton(
  * the video; the audio-only stage passes its own colors and sizes.
  */
 @Composable
-private fun Scrubber(
+internal fun Scrubber(
     segments: List<SponsorBlock.Segment>,
     positionMs: Long,
     bufferedMs: Long,
     durationMs: Long,
     enabled: Boolean,
-    onPreview: (Long) -> Unit,
+    onPreview: (Long?) -> Unit,
     onSeek: (Long) -> Unit,
     track: Color = Color.White.copy(alpha = 0.3f),
     buffered: Color = Color.White.copy(alpha = 0.5f),
@@ -805,6 +831,7 @@ private fun Scrubber(
     trackHeight: Dp = 4.dp,
     knob: Dp = 7.dp,
     knobDragging: Dp = 9.dp,
+    chapters: List<VideoChapter> = emptyList(),
 ) {
     var dragFraction by remember { mutableStateOf<Float?>(null) }
     val duration = durationMs.coerceAtLeast(1L)
@@ -814,10 +841,18 @@ private fun Scrubber(
     Canvas(
         modifier = Modifier
             .fillMaxWidth()
-            .height(24.dp)
+            .height(48.dp)
+            .testTag("player-seek-bar")
+            .semantics {
+                contentDescription = Loc.t("Seek")
+                progressBarRangeInfo = ProgressBarRangeInfo(playedFraction, 0f..1f)
+                if (enabled && durationMs > 0) setProgress { fraction ->
+                    onSeek((fraction.coerceIn(0f, 1f) * durationMs).toLong()); true
+                }
+            }
             .pointerInput(enabled, durationMs) {
                 if (!enabled || durationMs <= 0) return@pointerInput
-                detectTapGestures { offset -> onSeek((offset.x / size.width * durationMs).toLong()) }
+                detectTapGestures { offset -> onSeek(((offset.x / size.width).coerceIn(0f, 1f) * durationMs).toLong()) }
             }
             .pointerInput(enabled, durationMs) {
                 if (!enabled || durationMs <= 0) return@pointerInput
@@ -830,7 +865,7 @@ private fun Scrubber(
                         dragFraction?.let { onSeek((it * durationMs).toLong()) }
                         dragFraction = null
                     },
-                    onDragCancel = { dragFraction = null },
+                    onDragCancel = { dragFraction = null; onPreview(null) },
                 ) { change, _ ->
                     change.consume()
                     dragFraction = (change.position.x / size.width).coerceIn(0f, 1f)
@@ -849,6 +884,12 @@ private fun Scrubber(
             val x0 = size.width * (seg.startMs.toFloat() / duration).coerceIn(0f, 1f)
             val x1 = size.width * (seg.endMs.toFloat() / duration).coerceIn(0f, 1f)
             if (x1 > x0) drawRect(seg.category.color, Offset(x0, y), Size(x1 - x0, trackH))
+        }
+        chapters.drop(1).forEach { chapter ->
+            if (chapter.startMs in 1 until duration) {
+                val x = size.width * chapter.startMs.toFloat() / duration
+                drawRect(Color.Black, Offset(x - 1.dp.toPx(), y), Size(2.dp.toPx(), trackH))
+            }
         }
         drawCircle(played, radius = knobRadius.toPx(), center = Offset(size.width * playedFraction, size.height / 2f))
     }
@@ -904,7 +945,7 @@ private fun ElapsedText(
 private fun PlayerScrubber(
     state: PlayerState,
     enabled: Boolean,
-    onPreview: (Long) -> Unit,
+    onPreview: (Long?) -> Unit,
     onSeek: (Long) -> Unit,
     track: Color = Color.White.copy(alpha = 0.3f),
     buffered: Color = Color.White.copy(alpha = 0.5f),
@@ -914,6 +955,7 @@ private fun PlayerScrubber(
     knobDragging: Dp = 9.dp,
 ) {
     Scrubber(
+        chapters = state.details?.chapters.orEmpty(),
         segments = if (SponsorBlock.enabled) state.segments.filter { it.action != SponsorBlock.Action.Off } else emptyList(),
         positionMs = state.positionMs,
         bufferedMs = state.bufferedMs,
