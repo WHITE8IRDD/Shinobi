@@ -25,29 +25,36 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Run tests and assemble APKs
+      - name: Unit tests
         run: |
           set -o pipefail
-          ./gradlew testDebugUnitTest assembleDebug assembleRelease --console=plain 2>&1 | tee build.log
+          ./gradlew testDebugUnitTest --console=plain 2>&1 | tee -a build.log
+
+      - name: Assemble APKs
+        run: |
+          set -o pipefail
+          ./gradlew assembleDebug assembleRelease --console=plain 2>&1 | tee -a build.log
 
       - name: Publish failure log as annotations
         if: failure()
         run: |
           python3 - <<'PY'
-          import os
-          path = "build.log"
-          if not os.path.exists(path):
+          import os, re
+          def escape(text):
+              return text.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+          if not os.path.exists("build.log"):
               print("::error::Gradle produced no build.log")
               raise SystemExit(0)
-          with open(path, "rb") as f:
-              data = f.read().decode("utf-8", "replace")
-          lines = data.splitlines()
-          # The interesting part of a Gradle failure is at the end; keep up to ~60KB.
-          tail = "\n".join(lines[-600:])
-          chunks = [tail[i:i + 6000] for i in range(0, len(tail), 6000)][:10]
+          with open("build.log", "rb") as f:
+              lines = f.read().decode("utf-8", "replace").splitlines()
+          key = [l for l in lines if re.search(r"FAILED|error:|^e: |What went wrong|Caused by|tests? completed|> There were", l)][-40:]
+          if key:
+              print("::error title=failure summary::" + escape("\n".join(key)))
+          tail = "\n".join(lines[-1500:])
+          # GitHub truncates an annotation message at 4096 characters: keep chunks well under.
+          chunks = [tail[i:i + 3800] for i in range(0, len(tail), 3800)][:22]
           for i, chunk in enumerate(chunks):
-              safe = chunk.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
-              print(f"::error title=build log [{i + 1}/{len(chunks)}]::{safe}")
+              print(f"::error title=log {i + 1}/{len(chunks)}::{escape(chunk)}")
           PY
 
       - name: Upload build log
