@@ -519,7 +519,7 @@ private fun Composer(state: CommentsState) {
                 contentAlignment = Alignment.Center,
             ) {
                 if (state.posting) CircularProgressIndicator(color = c.onPrimary, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
-                else Icon(Icons.AutoMirrored.Rounded.Send, "Post", tint = if (canSend) c.onPrimary else c.onSurfaceVariant, modifier = Modifier.size(20.dp))
+                else Icon(Icons.AutoMirrored.Rounded.Send, Loc.t("Post"), tint = if (canSend) c.onPrimary else c.onSurfaceVariant, modifier = Modifier.size(20.dp))
             }
         }
     }
@@ -533,7 +533,7 @@ private fun CommentRow(comment: Comment, state: CommentsState, isReply: Boolean 
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                if (comment.pinned) Icon(Icons.Rounded.PushPin, "Pinned", tint = c.onSurfaceVariant, modifier = Modifier.size(14.dp))
+                if (comment.pinned) Icon(Icons.Rounded.PushPin, Loc.t("Pinned"), tint = c.onSurfaceVariant, modifier = Modifier.size(14.dp))
                 Text(comment.displayName(), fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
                 comment.ago?.let { Text(it, color = c.onSurfaceVariant, fontSize = 12.sp, maxLines = 1) }
             }
@@ -569,7 +569,7 @@ private fun CommentRow(comment: Comment, state: CommentsState, isReply: Boolean 
                 if (Account.signedIn && !comment.id.startsWith("local-")) {
                     Spacer(Modifier.width(16.dp))
                     Text(
-                        "Reply",
+                        Loc.t("Reply"),
                         color = c.onSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold,
                         modifier = Modifier.pressable { state.startReply(comment) }.padding(vertical = 2.dp),
                     )

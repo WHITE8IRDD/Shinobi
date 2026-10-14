@@ -612,7 +612,7 @@ private fun RowScope.MiniDetails(state: PlayerState, interactive: Boolean) {
                 onClick = state::togglePlay,
             )
             Box(Modifier.size(40.dp).pressable(enabled = interactive, onClick = state::close), contentAlignment = Alignment.Center) {
-                Icon(Icons.Rounded.Close, "Close", tint = c.onSurfaceVariant)
+                Icon(Icons.Rounded.Close, Loc.t("Close"), tint = c.onSurfaceVariant)
             }
         }
         val progress = if (state.durationMs > 0) (state.positionMs.toFloat() / state.durationMs).coerceIn(0f, 1f) else 0f

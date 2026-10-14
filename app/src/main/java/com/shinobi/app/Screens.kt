@@ -420,7 +420,7 @@ private fun HomeTasteFilterRow(
             onClick = { onSelectTopic(null) },
         )
         FilterPill(
-            label = "Shorts",
+            label = Loc.t("Shorts"),
             selected = false,
             icon = Icons.Rounded.PlayArrow,
             onClick = onOpenShorts,
@@ -440,7 +440,7 @@ private fun HomeTasteFilterRow(
             icon = Icons.Rounded.SmartDisplay,
             onClick = {
                 view.performHapticFeedback(android.view.HapticFeedbackConstants.CONTEXT_CLICK)
-                AppSettings.setMixShortsInFeed(!mix)
+                AppSettings.mixShortsInFeed = !mix
             },
         )
         Box(
@@ -1098,7 +1098,7 @@ fun LibraryScreen(
                                             Modifier.size(20.dp).pressable { LocalHistory.removeSearch(q) },
                                             contentAlignment = Alignment.Center,
                                         ) {
-                                            Icon(Icons.Rounded.Close, "Remove", tint = c.onSurfaceVariant, modifier = Modifier.size(13.dp))
+                                            Icon(Icons.Rounded.Close, Loc.t("Remove"), tint = c.onSurfaceVariant, modifier = Modifier.size(13.dp))
                                         }
                                     }
                                 }
@@ -1119,7 +1119,7 @@ fun LibraryScreen(
                 }
 
                 // Signed-in Library
-                item(key = "historyTitle") { SectionTitle("History") }
+                item(key = "historyTitle") { SectionTitle(Loc.t("History")) }
                 item(key = "history") {
                     val history = lib.history.videos
                     when {
@@ -1139,7 +1139,7 @@ fun LibraryScreen(
                         )
                     }
                 }
-                item(key = "playlistsTitle") { SectionTitle("Playlists") }
+                item(key = "playlistsTitle") { SectionTitle(Loc.t("Playlists")) }
                 val pinned = listOf(
                     PlaylistRef("WL", Loc.t("Watch later"), null, null),
                     PlaylistRef("LL", Loc.t("Liked videos"), null, null),
@@ -1245,7 +1245,7 @@ fun PlaylistScreen(playlist: PlaylistRef, feed: FeedState?, contentPadding: Padd
                     Modifier.fillMaxWidth().statusBarsPadding().padding(start = 12.dp, end = 16.dp, top = 12.dp, bottom = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    CircleAction(Icons.AutoMirrored.Rounded.ArrowBack, "Back", onBack)
+                    CircleAction(Icons.AutoMirrored.Rounded.ArrowBack, Loc.t("Back"), onBack)
                     Spacer(Modifier.width(12.dp))
                     Text(
                         playlist.title,

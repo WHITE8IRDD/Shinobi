@@ -85,6 +85,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.media3.ui.compose.PlayerSurface
@@ -241,25 +242,7 @@ fun VideoContent(
         if (!controlsVisible && (state.isBuffering || (state.loading && state.details == null))) {
             CircularProgressIndicator(color = Color.White, strokeWidth = 3.dp, modifier = Modifier.align(Alignment.Center).size(36.dp))
         }
-        state.currentCaption?.let { cue ->
-            Text(
-                cue.text,
-                color = Color.White,
-                fontSize = if (fullscreen) 20.sp else 16.sp,
-                lineHeight = if (fullscreen) 26.sp else 21.sp,
-                fontWeight = FontWeight.SemiBold,
-                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                maxLines = 3,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(horizontal = 20.dp, vertical = 4.dp)
-                    .padding(bottom = if (controlsVisible) 52.dp else 18.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(Color.Black.copy(alpha = 0.78f))
-                    .padding(horizontal = 12.dp, vertical = 7.dp),
-            )
-        }
+        CaptionLine(state, fullscreen, controlsVisible, Modifier.align(Alignment.BottomCenter))
         SkippedNote(state, Modifier.align(Alignment.TopCenter).padding(top = 12.dp).graphicsLayer { alpha = controlsAlpha() })
         // The Ask pill stays reachable while the controls are hidden.
         if (!controlsVisible) {
@@ -349,7 +332,7 @@ fun VideoContent(
                 Column(Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(start = 14.dp, end = 8.dp, bottom = 6.dp)) {
                     var scrubPreview by remember { mutableStateOf<Long?>(null) }
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(formatDuration(scrubPreview ?: state.positionMs), color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        ElapsedText(state, scrubPreview, Color.White, 12.sp, FontWeight.Bold)
                         Text(
                             " / " + formatDuration(state.durationMs),
                             color = Color.White.copy(alpha = 0.72f), fontSize = 12.sp, fontWeight = FontWeight.Bold,
@@ -377,11 +360,8 @@ fun VideoContent(
                             tinted = false,
                         ) { onToggleFullscreen() }
                     }
-                    Scrubber(
-                        segments = if (SponsorBlock.enabled) state.segments.filter { it.action != SponsorBlock.Action.Off } else emptyList(),
-                        positionMs = state.positionMs,
-                        bufferedMs = state.bufferedMs,
-                        durationMs = state.durationMs,
+                    PlayerScrubber(
+                        state = state,
                         enabled = enabled,
                         onPreview = { scrubPreview = it; touched() },
                         onSeek = { scrubPreview = null; state.seekTo(it); touched() },
@@ -443,11 +423,8 @@ fun AudioOnlyStage(
             }
             Spacer(Modifier.height(8.dp))
             var scrubPreview by remember { mutableStateOf<Long?>(null) }
-            Scrubber(
-                segments = if (SponsorBlock.enabled) state.segments.filter { it.action != SponsorBlock.Action.Off } else emptyList(),
-                positionMs = state.positionMs,
-                bufferedMs = state.bufferedMs,
-                durationMs = state.durationMs,
+            PlayerScrubber(
+                state = state,
                 enabled = interactive,
                 onPreview = { scrubPreview = it },
                 onSeek = { scrubPreview = null; state.seekTo(it) },
@@ -460,7 +437,7 @@ fun AudioOnlyStage(
             )
             Row(Modifier.fillMaxWidth().height(28.dp), verticalAlignment = Alignment.CenterVertically) {
                 val time = Modifier.width(56.dp)
-                Text(formatDuration(scrubPreview ?: state.positionMs), color = c.onSurfaceVariant, fontSize = 12.5.sp, fontWeight = FontWeight.ExtraBold, modifier = time)
+                ElapsedText(state, scrubPreview, c.onSurfaceVariant, 12.5.sp, FontWeight.ExtraBold, time)
                 // SponsorBlock's Ask pill, or the note after an automatic skip, between the times.
                 Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
                     val ask = state.askSegment
@@ -801,7 +778,7 @@ fun MorphPlayButton(
         } else {
             Icon(
                 if (playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                if (playing) "Pause" else "Play",
+                if (playing) Loc.t("Pause") else Loc.t("Play"),
                 tint = content,
                 modifier = Modifier.size(size * 0.46f),
             )
@@ -875,4 +852,80 @@ private fun Scrubber(
         }
         drawCircle(played, radius = knobRadius.toPx(), center = Offset(size.width * playedFraction, size.height / 2f))
     }
+}
+
+
+/**
+ * The active caption line. The ticking playback position is read in here rather than in the
+ * player itself, so a running video never rebuilds the whole player surface on a caption tick.
+ */
+@Composable
+private fun BoxScope.CaptionLine(state: PlayerState, fullscreen: Boolean, controlsVisible: Boolean, modifier: Modifier = Modifier) {
+    val cue = state.currentCaption ?: return
+    Text(
+        cue.text,
+        color = Color.White,
+        fontSize = if (fullscreen) 20.sp else 16.sp,
+        lineHeight = if (fullscreen) 26.sp else 21.sp,
+        fontWeight = FontWeight.SemiBold,
+        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+        maxLines = 3,
+        overflow = TextOverflow.Ellipsis,
+        modifier = modifier
+            .padding(horizontal = 20.dp, vertical = 4.dp)
+            .padding(bottom = if (controlsVisible) 52.dp else 18.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(Color.Black.copy(alpha = 0.78f))
+            .padding(horizontal = 12.dp, vertical = 7.dp),
+    )
+}
+
+/**
+ * The elapsed-time text beside the scrubber. Like the caption line, it reads the ticking
+ * position in its own scope so the player around it stays still while the video plays.
+ */
+@Composable
+private fun ElapsedText(
+    state: PlayerState,
+    preview: Long?,
+    color: Color,
+    fontSize: TextUnit,
+    weight: FontWeight,
+    modifier: Modifier = Modifier,
+) {
+    Text(formatDuration(preview ?: state.positionMs), color = color, fontSize = fontSize, fontWeight = weight, modifier = modifier)
+}
+
+/**
+ * The scrubber, fed from the player state directly. Reading the position and the buffered
+ * edge in here (instead of at the call site) confines the per-tick rebuild to this leaf.
+ */
+@Composable
+private fun PlayerScrubber(
+    state: PlayerState,
+    enabled: Boolean,
+    onPreview: (Long) -> Unit,
+    onSeek: (Long) -> Unit,
+    track: Color = Color.White.copy(alpha = 0.3f),
+    buffered: Color = Color.White.copy(alpha = 0.5f),
+    played: Color = Color.White,
+    trackHeight: Dp = 4.dp,
+    knob: Dp = 7.dp,
+    knobDragging: Dp = 9.dp,
+) {
+    Scrubber(
+        segments = if (SponsorBlock.enabled) state.segments.filter { it.action != SponsorBlock.Action.Off } else emptyList(),
+        positionMs = state.positionMs,
+        bufferedMs = state.bufferedMs,
+        durationMs = state.durationMs,
+        enabled = enabled,
+        onPreview = onPreview,
+        onSeek = onSeek,
+        track = track,
+        buffered = buffered,
+        played = played,
+        trackHeight = trackHeight,
+        knob = knob,
+        knobDragging = knobDragging,
+    )
 }

@@ -19,29 +19,33 @@ object AppSettings {
     private const val KEY_SHORTS_AUTOHIDE = "shorts_autohide"
     private var prefs: SharedPreferences? = null
 
-    /** Mix Shorts and long videos together in the Home "For you" feed. On by default. */
-    var mixShortsInFeed by mutableStateOf(true)
-        private set
+    private var mixState by mutableStateOf(true)
+    private var autoHideState by mutableStateOf(true)
+
+    /**
+     * Mix Shorts and long videos together in the Home "For you" feed. On by default.
+     * Assigning it persists the choice; an unchanged value writes nothing.
+     */
+    var mixShortsInFeed: Boolean
+        get() = mixState
+        set(value) {
+            if (mixState == value) return
+            mixState = value
+            prefs?.edit()?.putBoolean(KEY_MIX_SHORTS, value)?.apply()
+        }
 
     /** Hide the Shorts overlay while playing (tap to reveal). On by default. */
-    var shortsAutoHide by mutableStateOf(true)
-        private set
+    var shortsAutoHide: Boolean
+        get() = autoHideState
+        set(value) {
+            if (autoHideState == value) return
+            autoHideState = value
+            prefs?.edit()?.putBoolean(KEY_SHORTS_AUTOHIDE, value)?.apply()
+        }
 
     fun init(context: Context) {
         val p = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE).also { prefs = it }
-        mixShortsInFeed = p.getBoolean(KEY_MIX_SHORTS, true)
-        shortsAutoHide = p.getBoolean(KEY_SHORTS_AUTOHIDE, true)
-    }
-
-    fun setMixShortsInFeed(value: Boolean) {
-        if (mixShortsInFeed == value) return
-        mixShortsInFeed = value
-        prefs?.edit()?.putBoolean(KEY_MIX_SHORTS, value)?.apply()
-    }
-
-    fun setShortsAutoHide(value: Boolean) {
-        if (shortsAutoHide == value) return
-        shortsAutoHide = value
-        prefs?.edit()?.putBoolean(KEY_SHORTS_AUTOHIDE, value)?.apply()
+        mixState = p.getBoolean(KEY_MIX_SHORTS, true)
+        autoHideState = p.getBoolean(KEY_SHORTS_AUTOHIDE, true)
     }
 }

@@ -133,7 +133,7 @@ fun SignInScreen(onDone: () -> Unit, onCancel: () -> Unit) {
                     } else {
                         Text(error.orEmpty(), textAlign = TextAlign.Center, color = c.onSurfaceVariant)
                         Spacer(Modifier.height(16.dp))
-                        PillButton("Close", onCancel)
+                        PillButton(Loc.t("Close"), onCancel)
                     }
                 }
             }

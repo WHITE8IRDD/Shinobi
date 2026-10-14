@@ -21,6 +21,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -327,7 +328,7 @@ fun ShortsShelf(
     shorts: List<VideoItem>,
     onOpenShort: (VideoItem, List<VideoItem>) -> Unit,
     modifier: Modifier = Modifier,
-    title: String = "Shorts",
+    title: String = Loc.t("Shorts"),
     onViewAll: (() -> Unit)? = null,
 ) {
     if (shorts.isEmpty()) return
@@ -626,7 +627,7 @@ fun ShortsScreen(
                     ShortsBadgeIcon(size = 28.dp)
                     Spacer(Modifier.width(10.dp))
                     Text(
-                        "Shorts",
+                        Loc.t("Shorts"),
                         color = Color.White,
                         fontFamily = RoundedHeavy,
                         fontWeight = FontWeight.ExtraBold,
@@ -1097,28 +1098,9 @@ private fun ShortPageContent(
 
         }
 
-        // Bottom thin progress bar
-        if (isActivePage && player.durationMs > 0) {
-            val progress by animateFloatAsState(
-                targetValue = (player.positionMs.toFloat() / player.durationMs).coerceIn(0f, 1f),
-                animationSpec = tween(150),
-                label = "shortProgress",
-            )
-            Box(
-                Modifier
-                    .align(Alignment.BottomStart)
-                    .fillMaxWidth()
-                    .height(3.dp)
-                    .background(Color.White.copy(alpha = 0.24f)),
-            ) {
-                Box(
-                    Modifier
-                        .fillMaxHeight()
-                        .fillMaxWidth(progress)
-                        .background(c.primary),
-                )
-            }
-        }
+        // Bottom thin progress bar: the ticking position is read inside its own leaf, so
+        // a playing Short never recomposes this whole page.
+        ShortProgressBar(player, isActivePage, Modifier.align(Alignment.BottomStart))
     }
 }
 
@@ -1159,6 +1141,34 @@ private fun ShortActionItem(
             fontSize = 11.5.sp,
             fontWeight = FontWeight.Bold,
             maxLines = 1,
+        )
+    }
+}
+
+/**
+ * The thin progress line under a playing Short. Reading the ticking position in here keeps the
+ * page around it out of the per-tick recomposition while the video runs.
+ */
+@Composable
+private fun BoxScope.ShortProgressBar(player: PlayerState, isActivePage: Boolean, modifier: Modifier = Modifier) {
+    if (!isActivePage || player.durationMs <= 0) return
+    val c = MaterialTheme.colorScheme
+    val progress by animateFloatAsState(
+        targetValue = (player.positionMs.toFloat() / player.durationMs).coerceIn(0f, 1f),
+        animationSpec = tween(150),
+        label = "shortProgress",
+    )
+    Box(
+        modifier
+            .fillMaxWidth()
+            .height(3.dp)
+            .background(Color.White.copy(alpha = 0.24f)),
+    ) {
+        Box(
+            Modifier
+                .fillMaxHeight()
+                .fillMaxWidth(progress)
+                .background(c.primary),
         )
     }
 }

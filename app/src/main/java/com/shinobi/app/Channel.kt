@@ -136,7 +136,7 @@ fun ChannelScreen(state: ChannelState, contentPadding: PaddingValues, onBack: ()
             Modifier.fillMaxWidth().statusBarsPadding().padding(start = 12.dp, end = 16.dp, top = 12.dp, bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            CircleAction(Icons.AutoMirrored.Rounded.ArrowBack, "Back", onBack)
+            CircleAction(Icons.AutoMirrored.Rounded.ArrowBack, Loc.t("Back"), onBack)
             Spacer(Modifier.width(12.dp))
             Text(
                 state.details?.name.orEmpty(),
@@ -180,7 +180,7 @@ fun ChannelScreen(state: ChannelState, contentPadding: PaddingValues, onBack: ()
                         }
                     }
                 }
-                item(key = "videosTitle") { SectionTitle("Videos") }
+                item(key = "videosTitle") { SectionTitle(Loc.t("Videos")) }
                 items(state.videos, key = { it.id }) { video -> VideoCard(video, onClick = { onOpen(video) }) }
                 if (state.loading || state.hasMore) item {
                     Box(Modifier.fillMaxWidth().padding(28.dp), Alignment.Center) {

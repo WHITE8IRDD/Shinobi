@@ -554,14 +554,14 @@ fun FeedSettings() {
             title = Loc.t("Mix Shorts with videos"),
             subtitle = Loc.t("Shorts and videos together in For you"),
             checked = AppSettings.mixShortsInFeed,
-            onCheckedChange = AppSettings::setMixShortsInFeed,
+            onCheckedChange = { AppSettings.mixShortsInFeed = it },
         )
         SettingSwitchRow(
             icon = Icons.Rounded.VisibilityOff,
             title = Loc.t("Auto-hide Shorts controls"),
             subtitle = Loc.t("Hide the controls while a Short plays, and bring them back with a tap."),
             checked = AppSettings.shortsAutoHide,
-            onCheckedChange = AppSettings::setShortsAutoHide,
+            onCheckedChange = { AppSettings.shortsAutoHide = it },
         )
     }
 }
