@@ -418,7 +418,7 @@ class PersonalizedHomeState(
             ensureActive()
             rank(false) to rank(true)
         }
-        coroutineContext.ensureActive()
+        kotlinx.coroutines.currentCoroutineContext().ensureActive()
         if (!final && ranked.first.isEmpty() && ranked.second.isEmpty()) return
         sources = loaded.map { it.source }
         if (append) {
