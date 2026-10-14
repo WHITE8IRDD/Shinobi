@@ -30,9 +30,11 @@ Shinobi is built with Kotlin, Jetpack Compose and AndroidX Media3. It is a commu
 - Every skip is announced with a "Skipped · Undo" note, and a segment is only ever skipped once per viewing: Undo really undoes, and sitting inside a skipped segment won't throw you out of it again.
 - Per-category control (Sponsor, self-promotion, interaction reminder, intro, outro, preview, non-music, filler): skip, ask with a one-tap pill, mark on the scrubber, or off.
 
-### Balanced Home, smart search and regional Trending (1.3)
+### Balanced Home, smart search and regional Trending (1.4)
 - **For you** reserves separate budgets for YouTube discovery, diverse watch-history seeds and likes. A personal seed can supply at most six items in a 30-card page; repeated sources do not receive extra weight, and missing personal sources are filled only from discovery. Ranking also penalizes recently repeated creators and title topics. This is an open local ranker, not YouTube's proprietary algorithm.
-- A newly opened video qualifies as a history seed after five seconds of actual playback. Older interests survive a recent-topic binge; like/dislike changes update the feed. Home is available both signed in and signed out. When anonymous Home is empty, a real regional trending chart supplies discovery.
+- A newly opened video qualifies as a history seed after five seconds of actual playback. Older interests survive a recent-topic binge; like/dislike changes update the feed. Home is available both signed in and signed out. When anonymous Home is empty or unavailable, independent broad-category searches supply discovery instead of depending on a regional trending chart. These fallback searches are not presented as Trending.
+- **Resilient reads:** up to three attempts with exponential backoff, a public WEB/MWEB client fallback, cancellable eight-second API deadlines and client-pinned continuation tokens. Real Android network state distinguishes offline/captive Wi-Fi from slow, rate-limited or unavailable YouTube service. Mutation requests are not automatically replayed.
+- **One Home chip row** contains For you, Trending, Shorts, topic filters and the mixing toggle, with scrollable edge padding. Subscriptions uses full-width empty-state actions and wrapping card titles.
 - **Shorts appear first**, in a shelf above the videos. **Settings → Feed → Mix Shorts with videos** controls additional inline Shorts further down.
 - **Home → Trending** offers a country selector and a genuine public YouTube regional chart. Country selection is persisted; absent charts have an explicit unavailable state rather than invented results.
 - **Search predicts as you type** using YouTube suggestions and prefix-matched local searches. Requests are debounced, cancelled when obsolete and briefly cached. Tap a suggestion to search. Typed fragments are sent to Google's YouTube suggestion endpoint; only submitted searches are added to local history.
@@ -75,6 +77,7 @@ app/src/main/java/com/shinobi/app/
   Captions.kt         bounded TTML/WebVTT parsing, secure fetch and language preference
   LocalHistory.kt     private signed-out recent history
   Account.kt          optional YouTube account feeds and sync
+  ReadRecovery.kt     bounded read retries and accurate service/connectivity errors
   SponsorBlock.kt     category preferences and segment lookup
   Screens.kt          Home, Subscriptions, Search and Library
   Localization.kt     language choice, right-to-left application and text helpers
@@ -86,7 +89,8 @@ app/src/main/java/com/shinobi/app/
   BidiText.kt         isolated mixed-direction metadata
   AppSettings.kt      feed behaviour and persisted trending country
   Theme.kt / UiKit.kt expressive color, layout and reusable components
-app/src/test/         parser tests against real response fixtures plus caption tests
+app/src/test/         parser, ranking, retry/cancellation and state regression tests
+app/src/androidTest/  narrow-screen English/Arabic Compose layout regressions
 branding/             the mark, and the generator that turns it into every app asset
 ```
 
