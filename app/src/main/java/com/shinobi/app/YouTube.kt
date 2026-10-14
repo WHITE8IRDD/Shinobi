@@ -247,7 +247,7 @@ object YouTube {
         val s = Duration.between(then, now).seconds.coerceAtLeast(0)
         fun ago(n: Long, unit: String) = "$n $unit${if (n == 1L) "" else "s"} ago"
         return when {
-            s < 60 -> "just now"
+            s < 60 -> Loc.justNow()
             s < 3_600 -> ago(s / 60, "minute")
             s < 86_400 -> ago(s / 3_600, "hour")
             s < 7 * 86_400 -> ago(s / 86_400, "day")
@@ -259,20 +259,20 @@ object YouTube {
 
     /** Turns extractor failures into a sentence a person can act on. */
     fun friendlyError(t: Throwable): String = when (t) {
-        is AgeRestrictedContentException -> "This video is age-restricted and needs a YouTube account to watch."
-        is GeographicRestrictionException -> "This video isn't available in your country."
+        is AgeRestrictedContentException -> Loc.t("This video is age-restricted and needs a YouTube account to watch.")
+        is GeographicRestrictionException -> Loc.t("This video isn't available in your country.")
         is org.schabi.newpipe.extractor.exceptions.SignInConfirmNotBotException ->
-            "YouTube is asking to confirm you're not a bot. Try again in a few minutes."
-        is org.schabi.newpipe.extractor.exceptions.PrivateContentException -> "This video is private."
+            Loc.t("YouTube is asking to confirm you're not a bot. Try again in a few minutes.")
+        is org.schabi.newpipe.extractor.exceptions.PrivateContentException -> Loc.t("This video is private.")
         // Members-only videos (e.g. "Insider Edition") need a channel membership; Shinobi's
         // stream extraction is anonymous, so it can't play them even when you're a member.
         is ContentNotAvailableException ->
             if (t.message.orEmpty().contains("member", ignoreCase = true) || t is org.schabi.newpipe.extractor.exceptions.PaidContentException)
-                "This is a members-only video. Shinobi can't play members-only videos yet."
-            else "This video isn't available."
-        is ReCaptchaException -> "YouTube is rate-limiting requests right now. Try again in a minute."
-        is IOException -> "Couldn't reach YouTube. Check your connection."
-        else -> "Something went wrong loading this. Try again."
+                Loc.t("This is a members-only video. Shinobi can't play members-only videos yet.")
+            else Loc.t("This video isn't available.")
+        is ReCaptchaException -> Loc.t("YouTube is rate-limiting requests right now. Try again in a minute.")
+        is IOException -> Loc.t("Couldn't reach YouTube. Check your connection.")
+        else -> Loc.t("Something went wrong loading this. Try again.")
     }
 }
 

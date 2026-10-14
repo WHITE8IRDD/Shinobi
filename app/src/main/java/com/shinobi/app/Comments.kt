@@ -127,7 +127,7 @@ class CommentsState(private val scope: CoroutineScope) {
         liked[comment.id] = now
         scope.launch {
             runCatching { CommentPosting.setLiked(id, comment.id, now) }
-                .onFailure { liked[comment.id] = !now; onError(it.message ?: "Couldn't like that comment.") }
+                .onFailure { liked[comment.id] = !now; onError(it.message ?: Loc.t("Couldn't like that comment.")) }
         }
     }
     val repliesLoading = mutableStateMapOf<String, Boolean>()
@@ -248,7 +248,7 @@ class CommentsState(private val scope: CoroutineScope) {
                     channelId = null,
                     name = profile?.name,
                     avatar = profile?.avatar,
-                    text = text, likes = 0, ago = "just now",
+                    text = text, likes = 0, ago = Loc.t("just now"),
                     pinned = false, hearted = false, replyCount = 0, repliesToken = null,
                 )
                 if (threadId == null) {
@@ -259,7 +259,7 @@ class CommentsState(private val scope: CoroutineScope) {
                 }
                 draft = ""
                 replyingTo = null
-            }.onFailure { postError = it.message ?: "Couldn't post your comment." }
+            }.onFailure { postError = it.message ?: Loc.t("Couldn't post your comment.") }
             posting = false
         }
     }
@@ -281,14 +281,14 @@ fun CommentsCard(state: CommentsState, onOpen: () -> Unit) {
             .padding(horizontal = 16.dp, vertical = 14.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Comments", fontWeight = FontWeight.ExtraBold, fontSize = 15.sp, modifier = Modifier.weight(1f))
+            Text(Loc.t("Comments"), fontWeight = FontWeight.ExtraBold, fontSize = 15.sp, modifier = Modifier.weight(1f))
             if (state.total > 0) {
                 Text(formatCount(state.total.toLong()), color = c.onSurfaceVariant, fontWeight = FontWeight.Bold, fontSize = 13.sp)
             }
         }
         Spacer(Modifier.height(10.dp))
         when {
-            state.disabled -> Text("Comments are turned off for this video.", color = c.onSurfaceVariant, fontSize = 13.5.sp)
+            state.disabled -> Text(Loc.t("Comments are turned off for this video."), color = c.onSurfaceVariant, fontSize = 13.5.sp)
             first != null -> Row {
                 ChannelAvatar(first.avatar, first.author, size = 30)
                 Spacer(Modifier.width(10.dp))
@@ -304,7 +304,7 @@ fun CommentsCard(state: CommentsState, onOpen: () -> Unit) {
             }
             state.loading -> CircularProgressIndicator(color = c.primary, strokeWidth = 3.dp, modifier = Modifier.size(22.dp))
             state.error != null -> Text(state.error.orEmpty(), color = c.onSurfaceVariant, fontSize = 13.5.sp)
-            else -> Text(if (Account.signedIn) "No comments yet. Add the first one." else "No comments yet.", color = c.onSurfaceVariant, fontSize = 13.5.sp)
+            else -> Text(if (Account.signedIn) Loc.t("No comments yet. Add the first one.") else Loc.t("No comments yet."), color = c.onSurfaceVariant, fontSize = 13.5.sp)
         }
     }
 }
@@ -417,14 +417,14 @@ fun CommentsPanel(state: CommentsState, partialTop: Dp, onClose: () -> Unit) {
                     Box(Modifier.size(width = 36.dp, height = 4.dp).clip(CircleShape).background(c.onSurfaceVariant.copy(alpha = 0.45f)))
                 }
                 Row(Modifier.padding(start = 20.dp, end = 8.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text("Comments", fontFamily = RoundedHeavy, fontWeight = FontWeight.ExtraBold, fontSize = 21.sp)
+                    Text(Loc.t("Comments"), fontFamily = RoundedHeavy, fontWeight = FontWeight.ExtraBold, fontSize = 21.sp)
                     if (state.total > 0) {
                         Spacer(Modifier.width(8.dp))
                         Text(formatCount(state.total.toLong()), color = c.onSurfaceVariant, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                     }
                     Spacer(Modifier.weight(1f))
                     Box(Modifier.size(44.dp).pressable { close() }, contentAlignment = Alignment.Center) {
-                        Icon(Icons.Rounded.Close, "Close comments", tint = c.onSurfaceVariant)
+                        Icon(Icons.Rounded.Close, Loc.t("Close comments"), tint = c.onSurfaceVariant)
                     }
                 }
             }
@@ -442,14 +442,14 @@ fun CommentsPanel(state: CommentsState, partialTop: Dp, onClose: () -> Unit) {
                 }
                 if (!state.loading && state.comments.isEmpty()) item {
                     Text(
-                        if (state.disabled) "Comments are turned off for this video." else "No comments yet.",
+                        if (state.disabled) Loc.t("Comments are turned off for this video.") else Loc.t("No comments yet."),
                         color = c.onSurfaceVariant, fontSize = 14.sp, modifier = Modifier.padding(20.dp),
                     )
                 }
                 item { Spacer(Modifier.height(12.dp)) }
             }
             if (Account.signedIn) Composer(state) else Text(
-                "Sign in to comment.",
+                Loc.t(Loc.t("Sign in to comment.")),
                 color = c.onSurfaceVariant, fontSize = 13.sp,
                 modifier = Modifier.fillMaxWidth().background(c.surfaceContainer).padding(horizontal = 20.dp, vertical = 14.dp),
             )
@@ -480,9 +480,9 @@ private fun Composer(state: CommentsState) {
     Column(Modifier.fillMaxWidth().background(c.surfaceContainer).padding(horizontal = 12.dp, vertical = 10.dp)) {
         state.replyingTo?.let { target ->
             Row(Modifier.padding(start = 8.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("Replying to ${target.displayName()}", color = c.onSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                Text(Loc.t("Replying to") + " " + target.displayName(), color = c.onSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                 Box(Modifier.size(28.dp).pressable { state.replyingTo = null }, contentAlignment = Alignment.Center) {
-                    Icon(Icons.Rounded.Close, "Cancel reply", tint = c.onSurfaceVariant, modifier = Modifier.size(16.dp))
+                    Icon(Icons.Rounded.Close, Loc.t("Cancel reply"), tint = c.onSurfaceVariant, modifier = Modifier.size(16.dp))
                 }
             }
         }
@@ -493,7 +493,7 @@ private fun Composer(state: CommentsState) {
                     .padding(horizontal = 16.dp, vertical = 12.dp),
             ) {
                 if (state.draft.isEmpty()) {
-                    Text(if (state.replyingTo != null) "Add a reply…" else "Add a comment…", color = c.onSurfaceVariant, fontSize = 15.sp)
+                    Text(if (state.replyingTo != null) Loc.t("Add a reply…") else Loc.t("Add a comment…"), color = c.onSurfaceVariant, fontSize = 15.sp)
                 }
                 BasicTextField(
                     value = state.draft,
@@ -553,7 +553,7 @@ private fun CommentRow(comment: Comment, state: CommentsState, isReply: Boolean 
                 ) {
                     FlourishIcon(
                         if (isLiked) Icons.Rounded.ThumbUp else Icons.Outlined.ThumbUp,
-                        if (isLiked) "Unlike" else "Like",
+                        if (isLiked) Loc.t("Unlike") else Loc.t("Like"),
                         active = isLiked, kind = Flourish.Pop, tint = likeTint, size = 16.dp,
                     )
                     val count = comment.likes + if (isLiked) 1 else 0
@@ -564,7 +564,7 @@ private fun CommentRow(comment: Comment, state: CommentsState, isReply: Boolean 
                 }
                 if (comment.hearted) {
                     Spacer(Modifier.width(12.dp))
-                    Icon(Icons.Rounded.Favorite, "Hearted by creator", tint = c.primary, modifier = Modifier.size(14.dp))
+                    Icon(Icons.Rounded.Favorite, Loc.t("Hearted by creator"), tint = c.primary, modifier = Modifier.size(14.dp))
                 }
                 if (Account.signedIn && !comment.id.startsWith("local-")) {
                     Spacer(Modifier.width(16.dp))
@@ -586,7 +586,7 @@ private fun CommentRow(comment: Comment, state: CommentsState, isReply: Boolean 
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        if (open) "Hide replies" else "${comment.replyCount} ${if (comment.replyCount == 1) "reply" else "replies"}",
+                        if (open) Loc.t("Hide replies") else Loc.replies(comment.replyCount),
                         color = c.primary,
                         fontWeight = FontWeight.ExtraBold,
                         fontSize = 13.sp,

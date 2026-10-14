@@ -90,13 +90,13 @@ object Account {
         menu.walk { key, obj ->
             if (key == "activeAccountHeaderRenderer" && found == null) {
                 found = Profile(
-                    name = obj.text("accountName") ?: "YouTube account",
+                    name = obj.text("accountName") ?: Loc.t("YouTube account"),
                     handle = obj.text("channelHandle"),
                     avatar = obj.optJSONObject("accountPhoto")?.thumbnails()?.lastOrNull(),
                 )
             }
         }
-        val p = found ?: Profile("YouTube account", null, null)
+        val p = found ?: Profile(Loc.t("YouTube account"), null, null)
         store?.apply {
             put(KEY_NAME, p.name); put(KEY_HANDLE, p.handle); put(KEY_AVATAR, p.avatar)
         }

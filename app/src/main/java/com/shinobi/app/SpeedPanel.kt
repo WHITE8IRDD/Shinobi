@@ -107,7 +107,7 @@ fun SpeedButton(state: PlayerState) {
             .background(bg, ModeButtonShape),
         contentAlignment = Alignment.Center,
     ) {
-        if (normal) Icon(Icons.Rounded.Speed, "Playback speed", tint = ink, modifier = Modifier.size(20.dp))
+        if (normal) Icon(Icons.Rounded.Speed, Loc.t("Playback speed"), tint = ink, modifier = Modifier.size(20.dp))
         else Text(PlaybackSpeed.label(state.speed) + "×", color = ink, fontSize = 14.sp, fontWeight = FontWeight.Black)
     }
 }
@@ -129,7 +129,7 @@ fun AudioOnlyButton(state: PlayerState) {
     ) {
         Icon(
             if (on) Icons.Rounded.Headphones else Icons.Outlined.Headphones,
-            if (on) "Audio only is on" else "Audio only",
+            if (on) Loc.t("Audio only is on") else Loc.t("Audio only"),
             tint = ink, modifier = Modifier.size(20.dp),
         )
     }
@@ -210,7 +210,7 @@ private fun SpeedPanelContent(state: PlayerState) {
     ) {
         SpeedReadout({ value.value }, Modifier.align(Alignment.CenterHorizontally))
         Text(
-            if (PlaybackSpeed.remember) "Every video" else "This video only",
+            if (PlaybackSpeed.remember) Loc.t("Every video") else Loc.t("This video only"),
             color = c.onSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.Bold,
             modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 4.dp),
         )
@@ -342,8 +342,8 @@ private fun RememberCheck(checked: Boolean, modifier: Modifier, onToggle: () -> 
         }
         Spacer(Modifier.width(13.dp))
         Column {
-            Text("Remember for every video", fontSize = 14.5.sp, fontWeight = FontWeight.Bold)
-            Text("Until you set it back to 1×", color = c.onSurfaceVariant, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
+            Text(Loc.t("Remember for every video"), fontSize = 14.5.sp, fontWeight = FontWeight.Bold)
+            Text(Loc.t("Until you set it back to 1×"), color = c.onSurfaceVariant, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
         }
     }
 }

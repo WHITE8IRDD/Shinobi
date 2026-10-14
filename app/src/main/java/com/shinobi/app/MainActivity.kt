@@ -110,6 +110,15 @@ import kotlinx.coroutines.launch
 class MainActivity : ComponentActivity() {
     private val notificationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) {}
 
+    /**
+     * English by default, Arabic when it has been chosen. Wrap the Activity's context before
+     * anything is created, so resources, layout direction and the first Compose frame are all
+     * already in the right language.
+     */
+    override fun attachBaseContext(newBase: android.content.Context) {
+        super.attachBaseContext(Loc.wrap(newBase))
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -163,6 +172,8 @@ fun ShinobiApp() {
     val scrollToTop = remember { mutableStateMapOf<Tab, Int>() }
     val reduced = rememberReducedMotion()
     val morph = remember { PlayerMorph(scope) { expanded -> player.expanded = expanded } }
+    // Shorts owns the whole screen while a Short plays (see ShortsFocusState).
+    val shortsFocus = remember { ShortsFocusState() }
 
     fun openShortItem(item: VideoItem, shelf: List<VideoItem> = emptyList()) {
         openPlaylist = null
@@ -335,7 +346,10 @@ fun ShinobiApp() {
                 Tab.Shorts -> ShortsScreen(
                     state = shortsFeed,
                     player = player,
-                    bottomInset = stackBottom + NavHeight + 12.dp,
+                    focus = shortsFocus,
+                    // Only the system bar's height: the video runs under where the tab bar
+                    // would be, because the tab bar gets out of the way here.
+                    bottomInset = navBottom.coerceAtLeast(8.dp),
                     showSurface = !showPlayer && !showFullscreen && openChannel == null && openPlaylist == null,
                     onSearch = { tab = Tab.Search },
                 )
@@ -399,8 +413,10 @@ fun ShinobiApp() {
         // Shinobi's bottom vignette: the page color fades in over the last 130 dp (plus the
         // system bar), so content dissolves behind the mini-player and tab bar instead of
         // running hard into them. Drawn only — it never intercepts touches.
-        val inDarkShorts = tab == Tab.Shorts && shortsFeed.shorts.isNotEmpty() && openChannel == null && openPlaylist == null
-        val pageColor = if (inDarkShorts) Color(0xFF0A0A0D) else c.surface
+        // Shorts draws its own black page in every state (loading, error, playing), so the
+        // vignette has to follow it exactly — otherwise a light-mode band glows at the bottom.
+        val inDarkShorts = tab == Tab.Shorts && openChannel == null && openPlaylist == null
+        val pageColor = if (inDarkShorts) ShortsBackdrop else c.surface
         val vignette = remember(pageColor) { vignetteBrush(pageColor, opaqueAtTop = false) }
         Box(
             Modifier
@@ -460,6 +476,19 @@ fun ShinobiApp() {
             )
         }
 
+        // The tab bar is part of the chrome that steps aside while a Short plays: it slides
+        // down and fades out with the rest of the controls, and comes back on a tap.
+        val navHidden = tab == Tab.Shorts && shortsFocus.engaged && !shortsFocus.chromeVisible
+        val navAlpha by animateFloatAsState(
+            targetValue = if (navHidden) 0f else 1f,
+            animationSpec = tween(200, easing = Motion.Emphasized),
+            label = "navAlpha",
+        )
+        val navRise by animateDpAsState(
+            targetValue = if (navHidden) NavHeight + 24.dp else 0.dp,
+            animationSpec = tween(260, easing = Motion.Emphasized),
+            label = "navRise",
+        )
         NavPill(
             selected = tab,
             onSelect = { selected ->
@@ -471,7 +500,13 @@ fun ShinobiApp() {
                     else -> { openPlaylist = null; openChannel = null; tab = selected }
                 }
             },
-            modifier = Modifier.align(Alignment.BottomCenter).padding(start = 16.dp, end = 16.dp, bottom = stackBottom),
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(start = 16.dp, end = 16.dp, bottom = stackBottom)
+                .graphicsLayer {
+                    translationY = with(density) { navRise.toPx() }
+                    alpha = navAlpha
+                },
         )
 
         // The player morphs out of (and back into) the mini-player; see PlayerMorph.
@@ -591,13 +626,13 @@ private fun NavPill(selected: Tab, onSelect: (Tab) -> Unit, modifier: Modifier =
                     contentColor = labelColor,
                 ) {
                     Row(Modifier.height(50.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-                        Icon(if (active) t.selectedIcon else t.icon, contentDescription = t.label, modifier = Modifier.size(22.dp))
+                        Icon(if (active) t.selectedIcon else t.icon, contentDescription = Loc.t(t.label), modifier = Modifier.size(22.dp))
                         AnimatedVisibility(
                             visible = active,
                             enter = if (reduced) fadeIn(snap()) else fadeIn(tween(160, easing = Motion.Emphasized)) + expandHorizontally(tween(200, easing = Motion.Emphasized)),
                             exit = if (reduced) fadeOut(snap()) else fadeOut(tween(90)) + shrinkHorizontally(tween(160, easing = Motion.Emphasized)),
                         ) {
-                            Text(t.label, modifier = Modifier.padding(start = 8.dp), fontWeight = FontWeight.Bold, fontSize = 14.sp, maxLines = 1, softWrap = false)
+                            Text(Loc.t(t.label), modifier = Modifier.padding(start = 8.dp), fontWeight = FontWeight.Bold, fontSize = 14.sp, maxLines = 1, softWrap = false)
                         }
                     }
                 }

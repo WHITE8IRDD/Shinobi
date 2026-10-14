@@ -134,7 +134,7 @@ class FeedState(
     }
 
     private fun friendly(t: Throwable) = when (t) {
-        is NotSignedInException -> "You're signed out."
+        is NotSignedInException -> Loc.t("You're signed out.")
         else -> t.message?.takeIf { it.startsWith("YouTube") } ?: YouTube.friendlyError(t)
     }
 }
@@ -208,9 +208,9 @@ fun FeedList(
             feed.error != null && feed.videos.isEmpty() -> item {
                 EmptyState(
                     icon = Icons.Rounded.CloudOff,
-                    title = "Couldn't load this",
+                    title = Loc.t("Couldn't load this"),
                     body = feed.error.orEmpty(),
-                    action = { PillButton("Try again", { feed.refresh() }) },
+                    action = { PillButton(Loc.t("Try again"), { feed.refresh() }) },
                 )
             }
             feed.loading || feed.hasMore -> item {

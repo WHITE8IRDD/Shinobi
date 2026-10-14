@@ -44,6 +44,7 @@ import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Shield
+import androidx.compose.material.icons.rounded.SmartDisplay
 import androidx.compose.material.icons.rounded.Subscriptions
 import androidx.compose.material.icons.rounded.ThumbUp
 import androidx.compose.material.icons.rounded.TravelExplore
@@ -90,6 +91,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 // ── Home ───────────────────────────────────────────────────────────────────────
@@ -108,21 +110,27 @@ fun HomeScreen(
     scrollToTop: Int = 0,
 ) {
     val signedIn = Account.signedIn
-    val signature = LocalHistory.tasteSignature
+    // Only the taste key — what was watched or searched — may start a new recommendation
+    // load. Related videos arriving used to change the old signature and made Home reload
+    // its suggestions over and over (product owner's glitch, 2026-10-14).
+    val tasteKey = LocalHistory.tasteKey
     val hasTaste = LocalHistory.hasTasteSignal
 
     LaunchedEffect(signedIn) {
         if (signedIn) lib.home.ensureLoaded()
     }
-    LaunchedEffect(signature) {
-        personalized.syncWithTaste(signature)
+    LaunchedEffect(tasteKey) {
+        // A short debounce so returning from the player triggers one refinement, not a burst.
+        if (tasteKey.isNotEmpty()) delay(300)
+        personalized.syncWithTaste(tasteKey)
     }
 
     CollapsingHeaderLayout(
         resetKey = scrollToTop to (if (signedIn) lib.home.generation else personalized.generation),
         header = {
             ScreenHeader(title = "Shinobi", brandMark = true) {
-                CircleAction(Icons.Rounded.Search, "Search", onSearch)
+                CircleAction(Icons.Rounded.Search, Loc.t("Search"), onSearch)
+                ThemeToggleAction()
                 AccountAction(onAccount)
             }
         },
@@ -172,6 +180,43 @@ fun HomeScreen(
     }
 }
 
+/**
+ * One row of the Home "For you" list. With mixing on, Shorts sit between the long videos
+ * instead of being confined to their own shelf — the "both together" feed of the setting.
+ */
+private sealed interface ForYouEntry {
+    val key: String
+
+    data class Long(val video: VideoItem) : ForYouEntry {
+        override val key: String get() = "fy-v-" + video.id
+    }
+
+    data class Short(val video: VideoItem, val shelf: List<VideoItem>) : ForYouEntry {
+        override val key: String get() = "fy-s-" + video.id
+    }
+}
+
+/** Interleaves Shorts among long videos: one after every third video, in the same order. */
+private fun buildForYouFeed(
+    videos: List<VideoItem>,
+    shorts: List<VideoItem>,
+    mix: Boolean,
+): List<ForYouEntry> {
+    val shelf = shorts.distinctBy { it.id }.take(20)
+    if (!mix) return videos.map { ForYouEntry.Long(it) }
+    if (videos.isEmpty()) return shelf.map { ForYouEntry.Short(it, shelf) }
+    val out = ArrayList<ForYouEntry>(videos.size + shelf.size)
+    var next = 0
+    videos.forEachIndexed { index, video ->
+        out += ForYouEntry.Long(video)
+        if ((index + 1) % 3 == 0 && next < shelf.size) {
+            out += ForYouEntry.Short(shelf[next], shelf)
+            next++
+        }
+    }
+    return out
+}
+
 @Composable
 private fun PersonalizedHomeContent(
     state: PersonalizedHomeState,
@@ -184,16 +229,17 @@ private fun PersonalizedHomeContent(
 ) {
     val c = MaterialTheme.colorScheme
     val list = rememberScrollToTop(scrollToTop)
-    LaunchedEffect(state.generation) { list.scrollToItem(0) }
-    val nearEnd by remember {
-        derivedStateOf {
-            val last = list.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-            last >= list.layoutInfo.totalItemsCount - 4
-        }
+    // Back to the top only when the user asked for a refresh — never on a background load
+    // (which used to yank the list to the top while it was being scrolled).
+    LaunchedEffect(state.refreshToken) {
+        if (state.refreshToken > 0) list.scrollToItem(0)
     }
-    LaunchedEffect(nearEnd, state.videos.size) {
-        if (nearEnd && state.videos.isNotEmpty()) state.loadMore()
+
+    val mix = AppSettings.mixShortsInFeed
+    val entries = remember(state.videos, state.shorts, mix) {
+        buildForYouFeed(state.videos, state.shorts, mix)
     }
+    val shortsShelf = remember(state.shorts) { state.shorts.distinctBy { it.id }.take(20) }
 
     PullToRefresh(
         enabled = true,
@@ -213,57 +259,135 @@ private fun PersonalizedHomeContent(
                 )
             }
 
-            // Primary Shorts shelf at the top of the feed
-            val topShorts = state.shorts.take(10)
-            if (topShorts.isNotEmpty()) {
-                item(key = "shorts-top-shelf") {
-                    ShortsShelf(
-                        shorts = topShorts,
-                        onOpenShort = onOpenShort,
-                        onViewAll = onOpenShortsTab,
-                    )
-                }
-            }
-
-            // First batch of recommended videos
-            val firstBatch = state.videos.take(4)
-            items(firstBatch, key = { "rec-1-" + it.id }) { video ->
-                VideoCard(video, onClick = { onOpen(video) })
-            }
-
-            // Second Shorts shelf further down if we have more Shorts
-            val moreShorts = state.shorts.drop(10).take(10)
-            if (moreShorts.isNotEmpty() && state.videos.size >= 4) {
-                item(key = "shorts-mid-shelf") {
-                    ShortsShelf(
-                        shorts = moreShorts,
-                        title = "More Shorts for you",
-                        onOpenShort = onOpenShort,
-                        onViewAll = onOpenShortsTab,
-                    )
-                }
-            }
-
-            // Remaining recommended videos
-            val restBatch = state.videos.drop(4)
-            items(restBatch, key = { "rec-2-" + it.id }) { video ->
-                VideoCard(video, onClick = { onOpen(video) })
-            }
-
-            when {
-                state.error != null && state.videos.isEmpty() && state.shorts.isEmpty() -> item {
-                    EmptyState(
-                        icon = Icons.Rounded.CloudOff,
-                        title = "Couldn't load suggestions",
-                        body = state.error.orEmpty(),
-                        action = { PillButton("Try again", state::refresh) },
-                    )
-                }
-                state.loading || state.hasMore -> item {
-                    Box(Modifier.fillMaxWidth().padding(28.dp), Alignment.Center) {
-                        CircularProgressIndicator(color = c.primary, strokeWidth = 4.dp, modifier = Modifier.size(32.dp))
+            if (entries.isEmpty()) {
+                if (state.error != null) {
+                    item(key = "home-error") {
+                        EmptyState(
+                            icon = Icons.Rounded.CloudOff,
+                            title = Loc.t("Couldn't load suggestions"),
+                            body = state.error.orEmpty(),
+                            action = { PillButton(Loc.t("Try again"), state::refresh) },
+                        )
+                    }
+                } else if (!state.loading) {
+                    item(key = "home-empty") {
+                        EmptyState(
+                            icon = Icons.Rounded.AutoAwesome,
+                            title = Loc.t("Nothing here yet"),
+                            body = Loc.t("Videos and Shorts you watch stay privately on this phone and power your Home feed."),
+                            action = { PillButton(Loc.t("Watch Shorts"), onOpenShortsTab) },
+                        )
                     }
                 }
+            } else {
+                items(entries, key = { it.key }) { entry ->
+                    when (entry) {
+                        is ForYouEntry.Long -> VideoCard(entry.video, onClick = { onOpen(entry.video) })
+                        is ForYouEntry.Short -> ShortFeedCard(
+                            short = entry.video,
+                            onClick = { onOpenShort(entry.video, entry.shelf) },
+                        )
+                    }
+                }
+                // A separate shelf only when Shorts are *not* already mixed into the list.
+                if (!mix && shortsShelf.size > 3) {
+                    item(key = "shorts-shelf-more") {
+                        ShortsShelf(
+                            shorts = shortsShelf.drop(3).take(12),
+                            title = Loc.t("More Shorts for you"),
+                            onOpenShort = onOpenShort,
+                            onViewAll = onOpenShortsTab,
+                        )
+                    }
+                }
+                // The footer *is* the pagination trigger: it only asks for the next page while
+                // it is on screen, and stops for good once a page brings nothing new.
+                if (state.hasMore) {
+                    item(key = "home-more") {
+                        LaunchedEffect(state.videos.size, state.shorts.size) {
+                            if (!state.loading && state.hasMore) state.loadMore()
+                        }
+                        Box(Modifier.fillMaxWidth().padding(28.dp), Alignment.Center) {
+                            CircularProgressIndicator(color = c.primary, strokeWidth = 4.dp, modifier = Modifier.size(32.dp))
+                        }
+                    }
+                } else if (state.loading) {
+                    item(key = "home-loading") {
+                        Box(Modifier.fillMaxWidth().padding(28.dp), Alignment.Center) {
+                            CircularProgressIndicator(color = c.primary, strokeWidth = 4.dp, modifier = Modifier.size(32.dp))
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * A Short mixed into the Home feed: same card family as [VideoCard], portrait thumbnail and a
+ * Short badge, and one tap drops straight into the vertical Shorts player at this Short.
+ */
+@Composable
+private fun ShortFeedCard(short: VideoItem, onClick: () -> Unit) {
+    val c = MaterialTheme.colorScheme
+    val menu = LocalVideoMenu.current
+    val view = LocalView.current
+    val shape = RoundedCornerShape(28.dp)
+    val thumbUrl = short.thumbnail ?: "https://i.ytimg.com/vi/${short.id}/oar2.jpg"
+    Column(
+        modifier = Modifier
+            .padding(horizontal = 16.dp, vertical = 7.dp)
+            .fillMaxWidth()
+            .prefetchOnPress(short.id)
+            .pressable(
+                pressedScale = 0.97f,
+                onLongClick = { menu(short) },
+                onClick = { view.performHapticFeedback(android.view.HapticFeedbackConstants.CONTEXT_CLICK); onClick() },
+            )
+            .clip(shape)
+            .background(c.surfaceContainerLow)
+            .padding(6.dp),
+    ) {
+        Box {
+            Thumbnail(thumbUrl, Modifier.fillMaxWidth().aspectRatio(3f / 4f))
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(10.dp)
+                    .clip(CircleShape)
+                    .background(Color.Black.copy(alpha = 0.62f))
+                    .padding(horizontal = 10.dp, vertical = 4.dp),
+            ) {
+                Text("SHORT", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Black, letterSpacing = 0.5.sp)
+            }
+        }
+        Row(modifier = Modifier.padding(start = 8.dp, end = 6.dp, top = 12.dp, bottom = 10.dp)) {
+            val openChannel = LocalChannelOpener.current
+            Box(Modifier.pressable(enabled = short.channelUrl != null) { short.channelUrl?.let(openChannel) }) {
+                ChannelAvatar(short.avatar, short.channel)
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    short.title,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp,
+                    lineHeight = 20.sp,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    listOfNotNull(
+                        short.channel.takeIf { it.isNotBlank() },
+                        short.views.takeIf { it > 0 }?.let { Loc.views(it) },
+                    ).joinToString(" · "),
+                    color = c.onSurfaceVariant,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
         }
     }
@@ -278,6 +402,7 @@ private fun HomeTasteFilterRow(
     onRefresh: () -> Unit,
 ) {
     val c = MaterialTheme.colorScheme
+    val view = LocalView.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -287,7 +412,7 @@ private fun HomeTasteFilterRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         FilterPill(
-            label = "For you",
+            label = Loc.t("For you"),
             selected = selected == null,
             icon = Icons.Rounded.AutoAwesome,
             onClick = { onSelectTopic(null) },
@@ -298,13 +423,24 @@ private fun HomeTasteFilterRow(
             icon = Icons.Rounded.PlayArrow,
             onClick = onOpenShorts,
         )
-        topics.forEach { topic ->
+        topics.distinct().take(8).forEach { topic ->
             FilterPill(
                 label = topic,
                 selected = selected.equals(topic, ignoreCase = true),
                 onClick = { onSelectTopic(topic) },
             )
         }
+        // One tap between "Shorts mixed into For you" and "Shorts kept in their own shelf".
+        val mix = AppSettings.mixShortsInFeed
+        FilterPill(
+            label = Loc.t("Mix Shorts with videos"),
+            selected = mix,
+            icon = Icons.Rounded.SmartDisplay,
+            onClick = {
+                view.performHapticFeedback(android.view.HapticFeedbackConstants.CONTEXT_CLICK)
+                AppSettings.setMixShortsInFeed(!mix)
+            },
+        )
         Box(
             modifier = Modifier
                 .size(36.dp)
@@ -313,7 +449,7 @@ private fun HomeTasteFilterRow(
                 .background(c.surfaceContainerHigh),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(Icons.Rounded.Refresh, "Refresh recommendations", tint = c.onSurfaceVariant, modifier = Modifier.size(18.dp))
+            Icon(Icons.Rounded.Refresh, Loc.t("Refresh recommendations"), tint = c.onSurfaceVariant, modifier = Modifier.size(18.dp))
         }
     }
 }
@@ -373,10 +509,11 @@ private fun FirstTimeHomeWelcome(
     onPickTopic: (String) -> Unit,
 ) {
     val c = MaterialTheme.colorScheme
-    val starterTopics = remember {
+    // Rebuilt when the language changes, so the chips read (and search) in that language.
+    val starterTopics = remember(Loc.version) {
         listOf(
-            "Science & Space", "Tech Reviews", "Lo-Fi Beats", "Game Design",
-            "Nature 4K", "Cooking", "Coding & AI", "Filmmaking",
+            Loc.t("Science & Space"), Loc.t("Tech Reviews"), Loc.t("Lo-Fi Beats"), Loc.t("Game Design"),
+            Loc.t("Nature 4K"), Loc.t("Cooking"), Loc.t("Coding & AI"), Loc.t("Filmmaking"),
         )
     }
     LazyColumn(
@@ -414,13 +551,13 @@ private fun FirstTimeHomeWelcome(
                     Spacer(Modifier.width(12.dp))
                     Column {
                         Text(
-                            "Personalized on this device",
+                            Loc.t("Personalized on this device"),
                             color = c.primary,
                             fontWeight = FontWeight.ExtraBold,
                             fontSize = 12.5.sp,
                         )
                         Text(
-                            "Watch or search to start",
+                            Loc.t("Watch or search to start"),
                             fontFamily = RoundedHeavy,
                             fontWeight = FontWeight.ExtraBold,
                             fontSize = 22.sp,
@@ -430,7 +567,7 @@ private fun FirstTimeHomeWelcome(
                 }
                 Spacer(Modifier.height(12.dp))
                 Text(
-                    "Your Home feed starts clean. As soon as you search for or watch a video, Shinobi gathers videos and Shorts in that same style — privately on your phone, with no account needed.",
+                    Loc.t("Your Home feed starts clean. As soon as you search for or watch a video, Shinobi gathers videos and Shorts in that same style — privately on your phone, with no account needed."),
                     color = c.onSurfaceVariant,
                     fontSize = 14.sp,
                     lineHeight = 20.sp,
@@ -442,13 +579,13 @@ private fun FirstTimeHomeWelcome(
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     PillButton(
-                        text = "Search videos",
+                        text = Loc.t("Search videos"),
                         onClick = onSearch,
                         icon = Icons.Rounded.Search,
                         modifier = Modifier.weight(1f),
                     )
                     TonalPillButton(
-                        text = "Watch Shorts",
+                        text = Loc.t("Watch Shorts"),
                         onClick = onOpenShortsTab,
                         icon = Icons.Rounded.PlayArrow,
                         modifier = Modifier.weight(1f),
@@ -469,7 +606,7 @@ private fun FirstTimeHomeWelcome(
                     .padding(18.dp),
             ) {
                 Text(
-                    "Or pick a topic to seed your feed",
+                    Loc.t("Or pick a topic to seed your feed"),
                     fontFamily = RoundedHeavy,
                     fontWeight = FontWeight.ExtraBold,
                     fontSize = 17.sp,
@@ -477,7 +614,7 @@ private fun FirstTimeHomeWelcome(
                 )
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    "Tap any interest below to populate Home with videos and Shorts right away.",
+                    Loc.t("Tap any interest below to populate Home with videos and Shorts right away."),
                     color = c.onSurfaceVariant,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Medium,
@@ -514,28 +651,28 @@ private fun FirstTimeHomeWelcome(
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     FeatureBentoCard(
                         icon = Icons.Rounded.AutoAwesome,
-                        title = "Learns your taste",
-                        body = "Every video you watch refines Home in that creator and topic style.",
+                        title = Loc.t("Learns your taste"),
+                        body = Loc.t("Every video you watch refines Home in that creator and topic style."),
                         modifier = Modifier.weight(1f),
                     )
                     FeatureBentoCard(
                         icon = Icons.Rounded.Shield,
-                        title = "Zero ads, ever",
-                        body = "Ad-free streams plus automatic SponsorBlock segment skipping.",
+                        title = Loc.t("Zero ads, ever"),
+                        body = Loc.t("Ad-free streams plus automatic SponsorBlock segment skipping."),
                         modifier = Modifier.weight(1f),
                     )
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     FeatureBentoCard(
                         icon = Icons.Rounded.Lock,
-                        title = "Private history",
-                        body = "Watched videos, likes and Watch later stay locally on this phone.",
+                        title = Loc.t("Private history"),
+                        body = Loc.t("Watched videos, likes and Watch later stay locally on this phone."),
                         modifier = Modifier.weight(1f),
                     )
                     FeatureBentoCard(
                         icon = Icons.Rounded.AccountCircle,
-                        title = "Optional Google sync",
-                        body = "Tap to sign in if you want your cloud subscriptions and playlists.",
+                        title = Loc.t("Optional Google sync"),
+                        body = Loc.t("Tap to sign in if you want your cloud subscriptions and playlists."),
                         modifier = Modifier.weight(1f),
                         onClick = onSignIn,
                     )
@@ -576,8 +713,9 @@ fun SubscriptionsScreen(
     CollapsingHeaderLayout(
         resetKey = scrollToTop to lib.subscriptions.generation,
         header = {
-            ScreenHeader(title = "Subscriptions") {
-                CircleAction(Icons.Rounded.Search, "Search", onSearch)
+            ScreenHeader(title = Loc.t("Subscriptions")) {
+                CircleAction(Icons.Rounded.Search, Loc.t("Search"), onSearch)
+                ThemeToggleAction()
                 AccountAction(onAccount)
             }
         },
@@ -622,9 +760,9 @@ fun SubscriptionsScreen(
                         }
                         item(key = "lsub-sync-card") {
                             SyncBannerCard(
-                                title = "Sync your YouTube subscriptions",
-                                body = "Channels you watch or subscribe to appear above automatically. Sign in with Google anytime for cloud sync.",
-                                actionLabel = "Sign in with Google",
+                                title = Loc.t("Sync your YouTube subscriptions"),
+                                body = Loc.t("Channels you watch or subscribe to appear above automatically. Sign in with Google anytime for cloud sync."),
+                                actionLabel = Loc.t("Sign in with Google"),
                                 onAction = onSignIn,
                             )
                         }
@@ -680,9 +818,9 @@ private fun SignedOutSubscriptionsWelcome(
                     }
                     Spacer(Modifier.width(12.dp))
                     Column {
-                        Text("Channels you follow", color = c.primary, fontWeight = FontWeight.ExtraBold, fontSize = 12.5.sp)
+                        Text(Loc.t("Channels you follow"), color = c.primary, fontWeight = FontWeight.ExtraBold, fontSize = 12.5.sp)
                         Text(
-                            "Follow creators your way",
+                            Loc.t("Follow creators your way"),
                             fontFamily = RoundedHeavy,
                             fontWeight = FontWeight.ExtraBold,
                             fontSize = 22.sp,
@@ -692,7 +830,7 @@ private fun SignedOutSubscriptionsWelcome(
                 }
                 Spacer(Modifier.height(12.dp))
                 Text(
-                    "Subscribe to any channel while watching a video — even without signing in — or connect your Google account to bring in all the channels you already follow on YouTube.",
+                    Loc.t("Subscribe to any channel while watching a video — even without signing in — or connect your Google account to bring in all the channels you already follow on YouTube."),
                     color = c.onSurfaceVariant,
                     fontSize = 14.sp,
                     lineHeight = 20.sp,
@@ -704,13 +842,13 @@ private fun SignedOutSubscriptionsWelcome(
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     PillButton(
-                        text = "Find channels",
+                        text = Loc.t("Find channels"),
                         onClick = onSearch,
                         icon = Icons.Rounded.Search,
                         modifier = Modifier.weight(1f),
                     )
                     TonalPillButton(
-                        text = "Sign in",
+                        text = Loc.t("Sign in"),
                         onClick = onSignIn,
                         icon = Icons.Rounded.AccountCircle,
                         modifier = Modifier.weight(1f),
@@ -727,14 +865,14 @@ private fun SignedOutSubscriptionsWelcome(
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     FeatureBentoCard(
                         icon = Icons.Rounded.NotificationsActive,
-                        title = "Local following",
-                        body = "Tap Subscribe on any video or channel to follow it right on this device.",
+                        title = Loc.t("Local following"),
+                        body = Loc.t("Tap Subscribe on any video or channel to follow it right on this device."),
                         modifier = Modifier.weight(1f),
                     )
                     FeatureBentoCard(
                         icon = Icons.Rounded.History,
-                        title = "Automatic discovery",
-                        body = "Channels from your recent watch history appear here with their latest uploads.",
+                        title = Loc.t("Automatic discovery"),
+                        body = Loc.t("Channels from your recent watch history appear here with their latest uploads."),
                         modifier = Modifier.weight(1f),
                     )
                 }
@@ -800,8 +938,9 @@ fun LibraryScreen(
     CollapsingHeaderLayout(
         resetKey = scrollToTop to lib.history.generation,
         header = {
-            ScreenHeader(title = "Library") {
-                CircleAction(Icons.Rounded.Tune, "Settings & Appearance", onAccount)
+            ScreenHeader(title = Loc.t("Library")) {
+                ThemeToggleAction()
+                CircleAction(Icons.Rounded.Tune, Loc.t("Settings & Appearance"), onAccount)
             }
         },
     ) { top ->
@@ -820,21 +959,21 @@ fun LibraryScreen(
 
                     // 1. On-device collections grid (Watch later & Liked videos)
                     item(key = "localCollectionsTitle") {
-                        SectionTitle("Collections on this device")
+                        SectionTitle(Loc.t("Collections on this device"))
                     }
                     item(key = "localCollectionsGrid") {
                         val localPlaylists = listOf(
                             PlaylistRef(
                                 id = "LOCAL_WL",
-                                title = "Watch later",
+                                title = Loc.t("Watch later"),
                                 thumbnail = watchLater.firstOrNull()?.thumbnail,
-                                subtitle = "${watchLater.size} video${if (watchLater.size == 1) "" else "s"}",
+                                subtitle = Loc.videos(watchLater.size),
                             ),
                             PlaylistRef(
                                 id = "LOCAL_LL",
-                                title = "Liked videos",
+                                title = Loc.t("Liked videos"),
                                 thumbnail = liked.firstOrNull()?.thumbnail,
-                                subtitle = "${liked.size} video${if (liked.size == 1) "" else "s"}",
+                                subtitle = Loc.videos(liked.size),
                             ),
                         )
                         Row(
@@ -853,8 +992,8 @@ fun LibraryScreen(
                             Modifier.fillMaxWidth().padding(end = 20.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            SectionTitle("Recent on this device", modifier = Modifier.weight(1f))
-                            if (recent.isNotEmpty()) TextLink("Clear", onClick = LocalHistory::clear)
+                            SectionTitle(Loc.t("Recent on this device"), modifier = Modifier.weight(1f))
+                            if (recent.isNotEmpty()) TextLink(Loc.t("Clear"), onClick = LocalHistory::clear)
                         }
                     }
 
@@ -879,9 +1018,9 @@ fun LibraryScreen(
                                     }
                                     Spacer(Modifier.width(12.dp))
                                     Column(Modifier.weight(1f)) {
-                                        Text("No videos watched yet", fontWeight = FontWeight.ExtraBold, fontSize = 16.sp)
+                                        Text(Loc.t("No videos watched yet"), fontWeight = FontWeight.ExtraBold, fontSize = 16.sp)
                                         Text(
-                                            "Videos and Shorts you watch stay privately on this phone and power your Home feed.",
+                                            Loc.t("Videos and Shorts you watch stay privately on this phone and power your Home feed."),
                                             color = c.onSurfaceVariant,
                                             fontSize = 13.sp,
                                             lineHeight = 18.sp,
@@ -889,7 +1028,7 @@ fun LibraryScreen(
                                     }
                                 }
                                 Spacer(Modifier.height(14.dp))
-                                PillButton("Search videos", onSearch, icon = Icons.Rounded.Search)
+                                PillButton(Loc.t("Search videos"), onSearch, icon = Icons.Rounded.Search)
                             }
                         }
                     } else {
@@ -910,10 +1049,10 @@ fun LibraryScreen(
                                     Box(
                                         Modifier.size(40.dp).pressable(onClick = { LocalHistory.remove(entry.video.id) }),
                                         contentAlignment = Alignment.Center,
-                                    ) { Icon(Icons.Rounded.Close, "Remove from local history", tint = c.onSurfaceVariant) }
+                                    ) { Icon(Icons.Rounded.Close, Loc.t("Remove from local history"), tint = c.onSurfaceVariant) }
                                 }
                                 Text(
-                                    "Watched ${YouTube.relativeTime(java.time.Instant.ofEpochMilli(entry.watchedAtMs))}",
+                                    Loc.watched(YouTube.relativeTime(java.time.Instant.ofEpochMilli(entry.watchedAtMs))),
                                     color = c.onSurfaceVariant,
                                     fontSize = 11.sp,
                                     modifier = Modifier.padding(start = 4.dp, bottom = 6.dp),
@@ -929,8 +1068,8 @@ fun LibraryScreen(
                                 Modifier.fillMaxWidth().padding(end = 20.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                SectionTitle("Recent searches", modifier = Modifier.weight(1f))
-                                TextLink("Clear", onClick = LocalHistory::clearSearches)
+                                SectionTitle(Loc.t("Recent searches"), modifier = Modifier.weight(1f))
+                                TextLink(Loc.t("Clear"), onClick = LocalHistory::clearSearches)
                             }
                         }
                         item(key = "localSearchesChips") {
@@ -968,9 +1107,9 @@ fun LibraryScreen(
                     // 4. Sync & account card
                     item(key = "localAccountCard") {
                         SyncBannerCard(
-                            title = "Sync with your YouTube account",
-                            body = "Sign in with Google to access your cloud playlists, Watch later and synced watch history.",
-                            actionLabel = "Sign in with Google",
+                            title = Loc.t("Sync with your YouTube account"),
+                            body = Loc.t("Sign in with Google to access your cloud playlists, Watch later and synced watch history."),
+                            actionLabel = Loc.t("Sign in with Google"),
                             onAction = onSignIn,
                         )
                     }
@@ -992,7 +1131,7 @@ fun LibraryScreen(
                             CircularProgressIndicator(color = c.primary, strokeWidth = 4.dp, modifier = Modifier.size(28.dp))
                         }
                         else -> Text(
-                            lib.history.error ?: "Nothing watched yet.",
+                            lib.history.error ?: Loc.t("Nothing watched yet."),
                             color = c.onSurfaceVariant, fontSize = 14.sp,
                             modifier = Modifier.padding(horizontal = 20.dp),
                         )
@@ -1000,8 +1139,8 @@ fun LibraryScreen(
                 }
                 item(key = "playlistsTitle") { SectionTitle("Playlists") }
                 val pinned = listOf(
-                    PlaylistRef("WL", "Watch later", null, null),
-                    PlaylistRef("LL", "Liked videos", null, null),
+                    PlaylistRef("WL", Loc.t("Watch later"), null, null),
+                    PlaylistRef("LL", Loc.t("Liked videos"), null, null),
                 )
                 items((pinned + lib.playlists).chunked(2), key = { row -> row.joinToString { it.id } }) { row ->
                     Row(Modifier.padding(horizontal = 16.dp, vertical = 5.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -1120,9 +1259,11 @@ fun PlaylistScreen(playlist: PlaylistRef, feed: FeedState?, contentPadding: Padd
                     Box(Modifier.padding(top = top)) {
                         EmptyState(
                             icon = if (isLocalWl) Icons.Rounded.WatchLater else Icons.Rounded.ThumbUp,
-                            title = "Nothing saved here yet",
-                            body = if (isLocalWl) "Tap Save on any video or Short to keep it in Watch later on this device."
+                            title = Loc.t("Nothing saved here yet"),
+                            body = Loc.t(
+                            if (isLocalWl) "Tap Save on any video or Short to keep it in Watch later on this device."
                             else "Tap Like on any video or Short to add it to your Liked videos on this device.",
+                        ),
                         )
                     }
                 } else {
@@ -1135,7 +1276,7 @@ fun PlaylistScreen(playlist: PlaylistRef, feed: FeedState?, contentPadding: Padd
             } else if (feed != null) {
                 if (feed.videos.isEmpty() && !feed.loading && feed.error == null && !feed.hasMore) {
                     Box(Modifier.padding(top = top)) {
-                        EmptyState(Icons.Rounded.VideoLibrary, "Nothing here yet", "Videos you add to this playlist will show up here.")
+                        EmptyState(Icons.Rounded.VideoLibrary, Loc.t("Nothing here yet"), Loc.t("Videos you add to this playlist will show up here."))
                     }
                 } else {
                     FeedList(feed, contentPadding.withTop(top), onOpen, indicatorTop = top)
@@ -1196,7 +1337,7 @@ class SearchState(private val scope: CoroutineScope) {
                     }
                     val inner = innerDeferred.await()
                     val np = if (inner == null || inner.videos.isEmpty()) npDeferred.await() else null
-                    val vids = inner?.videos?.ifEmpty { np.orEmpty() } ?: np ?: throw java.io.IOException("Search failed")
+                    val vids = inner?.videos?.ifEmpty { np.orEmpty() } ?: np ?: throw java.io.IOException(Loc.t("Search failed"))
                     val sh = inner?.shorts.orEmpty() + vids.filter { it.isShort }
                     vids.filterNot { it.isShort } to sh.distinctBy { it.id }
                 }
@@ -1240,7 +1381,7 @@ fun SearchScreen(
         resetKey = scrollToTop to state.generation,
         header = {
             Column {
-                ScreenHeader(title = "Search")
+                ScreenHeader(title = Loc.t("Search"))
                 Row(
                     modifier = Modifier
                         .padding(horizontal = 16.dp)
@@ -1256,7 +1397,7 @@ fun SearchScreen(
                     Spacer(Modifier.width(12.dp))
                     Box(Modifier.weight(1f)) {
                         if (state.query.isEmpty()) {
-                            Text("Search YouTube videos & Shorts", color = c.onSurfaceVariant, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                            Text(Loc.t("Search YouTube videos & Shorts"), color = c.onSurfaceVariant, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
                         }
                         BasicTextField(
                             value = state.query,
@@ -1278,7 +1419,7 @@ fun SearchScreen(
                         Box(
                             modifier = Modifier.size(44.dp).pressable { state.query = "" },
                             contentAlignment = Alignment.Center,
-                        ) { Icon(Icons.Rounded.Close, "Clear", tint = c.onSurfaceVariant) }
+                        ) { Icon(Icons.Rounded.Close, Loc.t("Clear"), tint = c.onSurfaceVariant) }
                     }
                 }
                 Spacer(Modifier.height(8.dp))
@@ -1297,9 +1438,9 @@ fun SearchScreen(
                     }
                     state.error != null -> EmptyState(
                         icon = Icons.Rounded.CloudOff,
-                        title = "Search didn't load",
+                        title = Loc.t("Search didn't load"),
                         body = state.error.orEmpty(),
-                        action = { PillButton("Try again", { state.submit() }) },
+                        action = { PillButton(Loc.t("Try again"), { state.submit() }) },
                     )
                     state.submitted.isEmpty() -> {
                         val recentQueries = LocalHistory.recentQueries
@@ -1310,8 +1451,8 @@ fun SearchScreen(
                                         Modifier.fillMaxWidth().padding(end = 20.dp),
                                         verticalAlignment = Alignment.CenterVertically,
                                     ) {
-                                        SectionTitle("Recent searches", modifier = Modifier.weight(1f))
-                                        TextLink("Clear", onClick = LocalHistory::clearSearches)
+                                        SectionTitle(Loc.t("Recent searches"), modifier = Modifier.weight(1f))
+                                        TextLink(Loc.t("Clear"), onClick = LocalHistory::clearSearches)
                                     }
                                 }
                                 item(key = "search-recent-chips") {
@@ -1341,16 +1482,16 @@ fun SearchScreen(
                             item(key = "search-empty-card") {
                                 EmptyState(
                                     icon = Icons.Rounded.TravelExplore,
-                                    title = "Search without the ads",
-                                    body = "Videos and Shorts play straight away with no ads, and automatically teach your Home feed what you like.",
+                                    title = Loc.t("Search without the ads"),
+                                    body = Loc.t("Videos and Shorts play straight away with no ads, and automatically teach your Home feed what you like."),
                                 )
                             }
                         }
                     }
                     state.results.isEmpty() && state.shorts.isEmpty() -> EmptyState(
                         icon = Icons.Rounded.History,
-                        title = "Nothing found",
-                        body = "No videos matched “${state.submitted}”.",
+                        title = Loc.t("Nothing found"),
+                        body = Loc.t("No videos matched") + " “${state.submitted}”.",
                     )
                     else -> {
                         val list = rememberScrollToTop(scrollToTop)

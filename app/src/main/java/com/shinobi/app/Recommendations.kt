@@ -269,31 +269,44 @@ class PersonalizedHomeState(private val scope: CoroutineScope) {
     var generation by mutableIntStateOf(0)
         private set
 
-    private var lastSignature: String = ""
+    /** Bumped only by an explicit user refresh, so the list returns to the top when asked. */
+    var refreshToken by mutableIntStateOf(0)
+        private set
+
+    private var lastTasteKey: String = ""
     private val shownIds = HashSet<String>()
     private var nextRelatedToken: Pair<String, String>? = null
     private var nextSearchToken: Pair<String, String>? = null
     private var job: Job? = null
     private var moreJob: Job? = null
+    /** Set when a page brought nothing new: stop paging until the next explicit refresh. */
+    private var exhausted = false
 
     val hasMore: Boolean
-        get() = nextRelatedToken != null || nextSearchToken != null
+        get() = !exhausted && (nextRelatedToken != null || nextSearchToken != null)
 
-    /** Called by HomeScreen whenever [LocalHistory.tasteSignature] changes. */
-    fun syncWithTaste(signature: String) {
+    /**
+     * Called by HomeScreen when the user's taste key (recent watches + searches) changes.
+     *
+     * Only that key starts a new load. Related-video caching no longer re-triggers one, and a
+     * key that is already loaded is ignored, so the feed cannot reload itself in a loop.
+     */
+    fun syncWithTaste(tasteKey: String) {
         if (!LocalHistory.hasTasteSignal) {
             job?.cancel()
+            moreJob?.cancel()
             videos = emptyList()
             shorts = emptyList()
             topics = emptyList()
             selectedTopic = null
-            lastSignature = ""
+            lastTasteKey = ""
+            exhausted = false
             error = null
             loading = false
             return
         }
-        if (signature == lastSignature && (videos.isNotEmpty() || loading)) return
-        lastSignature = signature
+        if (tasteKey == lastTasteKey && (videos.isNotEmpty() || loading)) return
+        lastTasteKey = tasteKey
         loadRecommendations(isRefresh = false)
     }
 
@@ -305,10 +318,16 @@ class PersonalizedHomeState(private val scope: CoroutineScope) {
 
     fun refresh() {
         if (!LocalHistory.hasTasteSignal) return
+        refreshToken++
         loadRecommendations(isRefresh = true)
     }
 
     private fun loadRecommendations(isRefresh: Boolean) {
+        // One load at a time: a second request for the same key replaces the one in flight
+        // instead of stacking a second (and a third) fetch on top of it.
+        job?.cancel()
+        moreJob?.cancel()
+        exhausted = false
         val entries = LocalHistory.entries
         val queries = LocalHistory.recentQueries
         val seeds = TasteEngine.buildTasteSeeds(entries, queries)
@@ -337,7 +356,6 @@ class PersonalizedHomeState(private val scope: CoroutineScope) {
         loading = true
         refreshing = isRefresh && videos.isNotEmpty()
         error = null
-        job?.cancel()
         job = scope.launch {
             runCatching {
                 fetchTasteFeed(seeds, selectedTopic, watchedIds, dislikedIds, isRefresh)
@@ -400,6 +418,9 @@ class PersonalizedHomeState(private val scope: CoroutineScope) {
                     if (moreShorts.isNotEmpty()) {
                         shorts = (shorts + moreShorts).distinctBy { it.id }
                     }
+                    // A page that adds nothing means the feed is spent: without this the
+                    // footer could ask for the next page forever.
+                    if (moreVideos.isEmpty() && moreShorts.isEmpty()) exhausted = true
                 }
             }
             loading = false
@@ -536,7 +557,7 @@ class PersonalizedHomeState(private val scope: CoroutineScope) {
         val nextSrch = searchResults.firstNotNullOfOrNull { (q, _, next) -> next?.let { q to it } }
 
         if (finalVideos.isEmpty() && finalShorts.isEmpty()) {
-            throw java.io.IOException("Couldn't reach YouTube")
+            throw java.io.IOException(Loc.t("Couldn't reach YouTube"))
         }
 
         FetchResult(

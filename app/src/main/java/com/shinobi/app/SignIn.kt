@@ -69,15 +69,15 @@ fun SignInScreen(onDone: () -> Unit, onCancel: () -> Unit) {
     Column(Modifier.fillMaxSize().background(c.surface).statusBarsPadding().navigationBarsPadding()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(44.dp).pressable(onClick = onCancel), contentAlignment = Alignment.Center) {
-                Icon(Icons.Rounded.Close, "Cancel")
+                Icon(Icons.Rounded.Close, Loc.t("Cancel"))
             }
             Spacer(Modifier.width(6.dp))
             Column(Modifier.weight(1f)) {
-                Text("Sign in to YouTube", fontFamily = RoundedHeavy, fontWeight = FontWeight.ExtraBold, fontSize = 18.sp)
+                Text(Loc.t("Sign in to YouTube"), fontFamily = RoundedHeavy, fontWeight = FontWeight.ExtraBold, fontSize = 18.sp)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Rounded.Lock, null, tint = c.onSurfaceVariant, modifier = Modifier.size(12.dp))
                     Spacer(Modifier.width(4.dp))
-                    Text("accounts.google.com · kept encrypted on this phone", color = c.onSurfaceVariant, fontSize = 12.sp)
+                    Text(Loc.t("accounts.google.com · kept encrypted on this phone"), color = c.onSurfaceVariant, fontSize = 12.sp)
                 }
             }
         }
@@ -111,7 +111,7 @@ fun SignInScreen(onDone: () -> Unit, onCancel: () -> Unit) {
                                         }
                                         .onFailure {
                                             finishing = false
-                                            error = "Signed in, but YouTube didn't answer. Check your connection and try again."
+                                            error = Loc.t("Signed in, but YouTube didn't answer. Check your connection and try again.")
                                         }
                                 }
                             }
@@ -129,7 +129,7 @@ fun SignInScreen(onDone: () -> Unit, onCancel: () -> Unit) {
                     if (error == null) {
                         CircularProgressIndicator(color = c.primary, strokeWidth = 4.dp, modifier = Modifier.size(36.dp))
                         Spacer(Modifier.height(16.dp))
-                        Text("Finishing sign-in…", fontWeight = FontWeight.Bold)
+                        Text(Loc.t("Finishing sign-in…"), fontWeight = FontWeight.Bold)
                     } else {
                         Text(error.orEmpty(), textAlign = TextAlign.Center, color = c.onSurfaceVariant)
                         Spacer(Modifier.height(16.dp))
@@ -146,7 +146,7 @@ fun SignInScreen(onDone: () -> Unit, onCancel: () -> Unit) {
 fun AccountAction(onClick: () -> Unit) {
     val profile = Account.profile
     if (profile == null) {
-        CircleAction(Icons.Rounded.AccountCircle, "Sign in", onClick)
+        CircleAction(Icons.Rounded.AccountCircle, Loc.t("Sign in"), onClick)
     } else {
         Box(Modifier.size(44.dp).pressable(onClick = onClick), contentAlignment = Alignment.Center) {
             ChannelAvatar(profile.avatar, profile.name, size = 40)
@@ -168,29 +168,39 @@ fun AccountSheet(onSignIn: () -> Unit, onSignedOut: () -> Unit, onDismiss: () ->
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             if (profile == null) {
-                Text("Your YouTube, without the ads", fontFamily = RoundedHeavy, fontWeight = FontWeight.ExtraBold, fontSize = 20.sp, textAlign = TextAlign.Center)
+                Text(Loc.t("Your YouTube, without the ads"), fontFamily = RoundedHeavy, fontWeight = FontWeight.ExtraBold, fontSize = 20.sp, textAlign = TextAlign.Center)
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "Sign in to get your recommendations, subscriptions, history and playlists. " +
-                        "Likes, subscribes, Watch later and watch history sync back to your account.\n\n" +
-                        "Google treats unofficial apps as against its terms and can suspend accounts that use them. " +
-                        "A secondary Google account keeps that risk away from your main one.",
+                    Loc.t(
+                        "Sign in to get your recommendations, subscriptions, history and playlists. " +
+                            "Likes, subscribes, Watch later and watch history sync back to your account.\n\n" +
+                            "Google treats unofficial apps as against its terms and can suspend accounts that use them. " +
+                            "A secondary Google account keeps that risk away from your main one.",
+                    ),
                     color = c.onSurfaceVariant, fontSize = 14.sp, lineHeight = 20.sp, textAlign = TextAlign.Center,
                 )
                 Spacer(Modifier.height(20.dp))
-                PillButton("Sign in with Google", { onDismiss(); onSignIn() })
+                PillButton(Loc.t("Sign in with Google"), { onDismiss(); onSignIn() })
             } else {
                 ChannelAvatar(profile.avatar, profile.name, size = 72)
                 Spacer(Modifier.height(12.dp))
                 Text(profile.name, fontFamily = RoundedHeavy, fontWeight = FontWeight.ExtraBold, fontSize = 20.sp)
                 profile.handle?.let { Text(it, color = c.onSurfaceVariant, fontSize = 14.sp) }
                 Spacer(Modifier.height(20.dp))
-                PillButton("Sign out", { Account.signOut(); onSignedOut(); onDismiss() }, Icons.AutoMirrored.Rounded.Logout)
+                PillButton(Loc.t("Sign out"), { Account.signOut(); onSignedOut(); onDismiss() }, Icons.AutoMirrored.Rounded.Logout)
             }
             // Settings live here (product owner's choice): every tab's header has this sheet.
             Spacer(Modifier.height(28.dp))
             Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(c.surfaceContainer).padding(18.dp)) {
                 AppearanceSettings()
+            }
+            Spacer(Modifier.height(12.dp))
+            Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(c.surfaceContainer).padding(18.dp)) {
+                LanguageSettings()
+            }
+            Spacer(Modifier.height(12.dp))
+            Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(c.surfaceContainer).padding(18.dp)) {
+                FeedSettings()
             }
             Spacer(Modifier.height(12.dp))
             Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(c.surfaceContainer).padding(18.dp)) {

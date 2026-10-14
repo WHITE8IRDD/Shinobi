@@ -30,6 +30,7 @@ import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.text.font.DeviceFontFamilyName
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
@@ -546,6 +547,9 @@ fun ShinobiTheme(content: @Composable () -> Unit) {
     SystemBars(dark, scheme.surface)
     MaterialTheme(colorScheme = scheme, shapes = ExpressiveShapes, typography = Typography()) {
         CompositionLocalProvider(
+            // Arabic lays the whole app out right-to-left: rows, paddings, alignments and
+            // scrolling all mirror from this one value.
+            LocalLayoutDirection provides if (Loc.isRtl) LayoutDirection.Rtl else LayoutDirection.Ltr,
             // No tap ripples anywhere: press feedback is the scale-down from Motion.kt.
             LocalRippleConfiguration provides null,
             // Text and icons without an explicit color follow the theme. Without this they

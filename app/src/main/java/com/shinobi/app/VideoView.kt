@@ -311,16 +311,16 @@ fun VideoContent(
                                 .padding(horizontal = 11.dp, vertical = 7.dp),
                         ) {
                             Text(
-                                if (QualityPreference.height == null) "Auto · $quality" else quality,
+                                if (QualityPreference.height == null) Loc.t("Auto") + " · $quality" else quality,
                                 color = Color.White, fontSize = 11.5.sp, fontWeight = FontWeight.Black,
                             )
                         }
                     }
                     if (pip?.supported == true) {
                         Spacer(Modifier.width(8.dp))
-                        GlassButton(Icons.Rounded.PictureInPictureAlt, "Picture-in-picture", enabled, size = 30.dp, iconSize = 18.dp) {
+                        GlassButton(Icons.Rounded.PictureInPictureAlt, Loc.t("Picture-in-picture"), enabled, size = 30.dp, iconSize = 18.dp) {
                             controlsVisible = false
-                            if (!pip.enter(state.videoAspect)) state.actionMessage = "Picture-in-picture is turned off for Shinobi in Settings."
+                            if (!pip.enter(state.videoAspect)) state.actionMessage = Loc.t("Picture-in-picture is turned off for Shinobi in Settings.")
                         }
                     }
                 }
@@ -330,7 +330,7 @@ fun VideoContent(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     val skip = if (fullscreen) 56.dp else 48.dp
-                    GlassButton(Icons.Rounded.Replay10, "Back 10 seconds", enabled, size = skip, iconSize = skip * 0.62f) {
+                    GlassButton(Icons.Rounded.Replay10, Loc.t("Back 10 seconds"), enabled, size = skip, iconSize = skip * 0.62f) {
                         touched(); state.seekBy(-10_000)
                     }
                     MorphPlayButton(
@@ -342,7 +342,7 @@ fun VideoContent(
                         content = Color.White,
                         enabled = enabled,
                     ) { touched(); state.togglePlay() }
-                    GlassButton(Icons.Rounded.Forward10, "Forward 10 seconds", enabled, size = skip, iconSize = skip * 0.62f) {
+                    GlassButton(Icons.Rounded.Forward10, Loc.t("Forward 10 seconds"), enabled, size = skip, iconSize = skip * 0.62f) {
                         touched(); state.seekBy(10_000)
                     }
                 }
@@ -362,7 +362,7 @@ fun VideoContent(
                         if (state.captionTracks.isNotEmpty()) {
                             GlassButton(
                                 Icons.Rounded.Subtitles,
-                                "Captions",
+                                Loc.t("Captions"),
                                 enabled,
                                 size = 34.dp,
                                 iconSize = 21.dp,
@@ -370,7 +370,7 @@ fun VideoContent(
                         }
                         GlassButton(
                             if (fullscreen) Icons.Rounded.FullscreenExit else Icons.Rounded.Fullscreen,
-                            if (fullscreen) "Exit fullscreen" else "Fullscreen",
+                            if (fullscreen) Loc.t("Exit fullscreen") else Loc.t("Fullscreen"),
                             enabled,
                             size = 34.dp,
                             iconSize = 22.dp,
@@ -430,7 +430,7 @@ fun AudioOnlyStage(
                 horizontalArrangement = Arrangement.spacedBy(30.dp, Alignment.CenterHorizontally),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                TonalSkip(Icons.Rounded.Replay10, "Back 10 seconds", interactive) { state.seekBy(-10_000) }
+                TonalSkip(Icons.Rounded.Replay10, Loc.t("Back 10 seconds"), interactive) { state.seekBy(-10_000) }
                 MorphPlayButton(
                     playing = state.isPlaying,
                     buffering = state.isBuffering || (state.loading && state.details == null),
@@ -439,7 +439,7 @@ fun AudioOnlyStage(
                     content = c.onPrimary,
                     enabled = interactive,
                 ) { state.togglePlay() }
-                TonalSkip(Icons.Rounded.Forward10, "Forward 10 seconds", interactive) { state.seekBy(10_000) }
+                TonalSkip(Icons.Rounded.Forward10, Loc.t("Forward 10 seconds"), interactive) { state.seekBy(10_000) }
             }
             Spacer(Modifier.height(8.dp))
             var scrubPreview by remember { mutableStateOf<Long?>(null) }
@@ -545,7 +545,7 @@ private fun SkipSegmentPill(segment: SponsorBlock.Segment, enabled: Boolean, mod
         verticalAlignment = Alignment.CenterVertically,
     ) {
         val ink = if (segment.category.color.luminance() > 0.45f) Color(0xFF151515) else Color.White
-        Text("Skip ${segment.category.short}", color = ink, fontSize = 12.sp, fontWeight = FontWeight.Black)
+        Text(Loc.t("Skip") + " " + Loc.t(segment.category.short)), color = ink, fontSize = 12.sp, fontWeight = FontWeight.Black)
         Icon(Icons.Rounded.SkipNext, null, tint = ink, modifier = Modifier.size(18.dp))
     }
 }
@@ -566,11 +566,11 @@ private fun SkippedNote(state: PlayerState, modifier: Modifier) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            "Skipped ${formatDuration(skip.segment.lengthMs)} ${skip.segment.category.short}",
+            Loc.t("Skipped") + " " + formatDuration(skip.segment.lengthMs) + " " + Loc.t(skip.segment.category.short),
             color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold,
         )
         Text(
-            "Undo",
+            Loc.t("Undo"),
             color = skip.segment.category.color, fontSize = 12.sp, fontWeight = FontWeight.Black,
             modifier = Modifier.pressable { state.undoSkip(skip) }.padding(horizontal = 10.dp, vertical = 8.dp),
         )
@@ -589,18 +589,18 @@ fun QualitySheet(state: PlayerState, onDismiss: () -> Unit) {
         containerColor = c.surfaceContainerLow,
     ) {
         Text(
-            "Quality",
+            Loc.t("Quality"),
             fontFamily = RoundedHeavy, fontWeight = FontWeight.ExtraBold, fontSize = 21.sp,
             modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 8.dp),
         )
         state.playingFormat?.let {
             Text(
-                "Playing $it",
+                Loc.t("Playing") + " $it",
                 color = c.onSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 8.dp),
             )
         }
-        QualityRow("Auto", "Best up to 1080p" + ((state.decodedHeight?.let { "${it}p" } ?: details.quality)?.let { " · playing $it" } ?: ""), chosen == null) {
+        QualityRow(Loc.t("Auto"), Loc.t("Best up to 1080p") + ((state.decodedHeight?.let { "${it}p" } ?: details.quality)?.let { " · ${Loc.t("Playing")} $it" } ?: ""), chosen == null) {
             state.setQuality(null); onDismiss()
         }
         details.qualities.forEach { h ->
@@ -613,9 +613,9 @@ fun QualitySheet(state: PlayerState, onDismiss: () -> Unit) {
 private fun qualityTag(height: Int): String? = when {
     height >= 2160 -> "4K"
     height >= 1440 -> "QHD"
-    height >= 1080 -> "Full HD"
+    height >= 1080 -> Loc.t("Full HD")
     height >= 720 -> "HD"
-    height <= 240 -> "Data saver"
+    height <= 240 -> Loc.t("Data saver")
     else -> null
 }
 
@@ -638,7 +638,7 @@ private fun QualityRow(title: String, subtitle: String?, selected: Boolean, onCl
                 Text(subtitle, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = if (selected) c.onPrimaryContainer.copy(alpha = 0.75f) else c.onSurfaceVariant)
             }
         }
-        if (selected) Icon(Icons.Rounded.Check, "Selected", tint = c.onPrimaryContainer)
+        if (selected) Icon(Icons.Rounded.Check, Loc.t("Selected"), tint = c.onPrimaryContainer)
     }
 }
 
@@ -655,7 +655,7 @@ private fun BoxScope.ErrorPanel(message: String, onRetry: () -> Unit, onCollapse
         Spacer(Modifier.height(12.dp))
         Box(
             Modifier.pressable(onClick = onRetry).clip(CircleShape).background(Color.White).padding(horizontal = 18.dp, vertical = 9.dp),
-        ) { Text("Try again", color = Color(0xFF141414), fontWeight = FontWeight.Bold, fontSize = 13.sp) }
+        ) { Text(Loc.t("Try again"), color = Color(0xFF141414), fontWeight = FontWeight.Bold, fontSize = 13.sp) }
     }
 }
 

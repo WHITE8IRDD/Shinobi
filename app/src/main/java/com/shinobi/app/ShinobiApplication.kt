@@ -14,6 +14,9 @@ class ShinobiApplication : Application(), ImageLoaderFactory {
         // The iOS client only adds HLS livestream formats; Shinobi plays VOD, so skip that request.
         org.schabi.newpipe.extractor.services.youtube.extractors.YoutubeStreamExtractor.setFetchIosClient(false)
         ThemeSettings.init(this)
+        AppSettings.init(this)
+        // English by default, Arabic one tap away in Settings → Language.
+        Loc.init(this)
         QualityPreference.init(this)
         PlaybackSpeed.init(this)
         AudioOnly.init(this)
