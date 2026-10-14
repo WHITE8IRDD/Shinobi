@@ -113,10 +113,10 @@ class ChannelState(val url: String, private val scope: CoroutineScope) {
         if (Account.signedIn) {
             scope.launch {
                 runCatching { InnerTube.setSubscribed(d.id, nextSub) }
-                    .onFailure { subscribed = before; onError("Couldn't update your subscription.") }
+                    .onFailure { subscribed = before; onError(Loc.t("Couldn't update your subscription.")) }
             }
         } else {
-            onError(if (nextSub) "Following ${d.name}" else "Unfollowed ${d.name}")
+            onError(if (nextSub) Loc.t("Following") + " " + d.name else Loc.t("Unfollowed") + " " + d.name)
         }
     }
 }
@@ -136,7 +136,7 @@ fun ChannelScreen(state: ChannelState, contentPadding: PaddingValues, onBack: ()
             Modifier.fillMaxWidth().statusBarsPadding().padding(start = 12.dp, end = 16.dp, top = 12.dp, bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            CircleAction(Icons.AutoMirrored.Rounded.ArrowBack, "Back", onBack)
+            CircleAction(Icons.AutoMirrored.Rounded.ArrowBack, Loc.t("Back"), onBack)
             Spacer(Modifier.width(12.dp))
             Text(
                 state.details?.name.orEmpty(),
@@ -149,8 +149,8 @@ fun ChannelScreen(state: ChannelState, contentPadding: PaddingValues, onBack: ()
         val d = state.details
         when {
             d == null && state.error != null -> Box(Modifier.padding(top = top)) { EmptyState(
-                Icons.Rounded.CloudOff, "Couldn't load this channel", state.error.orEmpty(),
-                action = { PillButton("Try again", state::load) },
+                Icons.Rounded.CloudOff, Loc.t("Couldn't load this channel"), state.error.orEmpty(),
+                action = { PillButton(Loc.t("Try again"), state::load) },
             ) }
             d == null -> Box(Modifier.fillMaxWidth().padding(top = top + 60.dp), Alignment.Center) {
                 CircularProgressIndicator(color = c.primary, strokeWidth = 4.dp, modifier = Modifier.size(36.dp))
@@ -167,7 +167,7 @@ fun ChannelScreen(state: ChannelState, contentPadding: PaddingValues, onBack: ()
                             Spacer(Modifier.width(14.dp))
                             Column(Modifier.weight(1f)) {
                                 Text(d.name, fontFamily = RoundedHeavy, fontWeight = FontWeight.ExtraBold, fontSize = 20.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                                if (d.subscribers > 0) Text("${formatCount(d.subscribers)} subscribers", color = c.onSurfaceVariant, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                                if (d.subscribers > 0) Text(Loc.subscribers(d.subscribers), color = c.onSurfaceVariant, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                             }
                         }
                         state.subscribed?.let { subscribed ->
@@ -180,7 +180,7 @@ fun ChannelScreen(state: ChannelState, contentPadding: PaddingValues, onBack: ()
                         }
                     }
                 }
-                item(key = "videosTitle") { SectionTitle("Videos") }
+                item(key = "videosTitle") { SectionTitle(Loc.t("Videos")) }
                 items(state.videos, key = { it.id }) { video -> VideoCard(video, onClick = { onOpen(video) }) }
                 if (state.loading || state.hasMore) item {
                     Box(Modifier.fillMaxWidth().padding(28.dp), Alignment.Center) {
@@ -211,6 +211,6 @@ private fun ChannelSubscribeButton(subscribed: Boolean, onClick: () -> Unit) {
             FlourishIcon(Icons.Rounded.NotificationsActive, null, active = true, kind = Flourish.Ring, tint = c.onSecondaryContainer, size = 18.dp)
             Spacer(Modifier.width(6.dp))
         }
-        Text(if (subscribed) "Subscribed" else "Subscribe", color = if (subscribed) c.onSecondaryContainer else c.surface, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp)
+        Text(if (subscribed) Loc.t("Subscribed") else Loc.t("Subscribe"), color = if (subscribed) c.onSecondaryContainer else c.surface, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp)
     }
 }

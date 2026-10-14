@@ -230,7 +230,7 @@ class PlayerState(private val scope: CoroutineScope) {
                     // page fetch and only slowed down the critical path.
                     comments.load(item.id)
                     known[item.id] = current!!
-                    if (!d.playable) error = "No playable stream was found for this video."
+                    if (!d.playable) error = Loc.t("No playable stream was found for this video.")
                     else if (startPlayback) startPlayback(current!!)
                 }
                 .onFailure {
@@ -292,7 +292,7 @@ class PlayerState(private val scope: CoroutineScope) {
         known[item.id] = item
         if (current == null || player.mediaItemCount == 0) { open(item, expand = false); return }
         player.addMediaItem(player.currentMediaItemIndex + 1, mediaItemFor(item))
-        actionMessage = "Playing next"
+        actionMessage = Loc.t("Playing next")
         continueIfEnded(player)
     }
 
@@ -309,7 +309,7 @@ class PlayerState(private val scope: CoroutineScope) {
         known[item.id] = item
         if (current == null || player.mediaItemCount == 0) { open(item, expand = false); return }
         player.addMediaItem(mediaItemFor(item))
-        actionMessage = "Added to queue"
+        actionMessage = Loc.t("Added to queue")
         continueIfEnded(player)
     }
 
@@ -422,7 +422,7 @@ class PlayerState(private val scope: CoroutineScope) {
             accountState = beforeAccount.copy(like = next)
             scope.launch {
                 runCatching { InnerTube.setLike(item.id, next) }
-                    .onFailure { accountState = beforeAccount; actionMessage = "Couldn't update your like." }
+                    .onFailure { accountState = beforeAccount; actionMessage = Loc.t("Couldn't update your like.") }
             }
         }
     }
@@ -444,7 +444,7 @@ class PlayerState(private val scope: CoroutineScope) {
             accountState = before.copy(subscribed = subscribe, channelId = channelId)
             scope.launch {
                 runCatching { InnerTube.setSubscribed(channelId, subscribe) }
-                    .onFailure { accountState = before; actionMessage = "Couldn't update your subscription." }
+                    .onFailure { accountState = before; actionMessage = Loc.t("Couldn't update your subscription.") }
             }
         } else {
             actionMessage = if (subscribe) "Following ${item.channel}" else "Unfollowed ${item.channel}"
@@ -459,11 +459,11 @@ class PlayerState(private val scope: CoroutineScope) {
         if (Account.signedIn) {
             scope.launch {
                 runCatching { InnerTube.setInWatchLater(item.id, add) }
-                    .onSuccess { actionMessage = if (add) "Saved to Watch later" else "Removed from Watch later" }
-                    .onFailure { inWatchLater = !add; actionMessage = "Saved locally on this device"; Log.w(TAG, "watch later ${item.id}", it) }
+                    .onSuccess { actionMessage = if (add) Loc.t("Saved to Watch later") else Loc.t("Removed from Watch later") }
+                    .onFailure { inWatchLater = !add; actionMessage = Loc.t("Saved locally on this device"); Log.w(TAG, "watch later ${item.id}", it) }
             }
         } else {
-            actionMessage = if (add) "Saved to Watch later" else "Removed from Watch later"
+            actionMessage = if (add) Loc.t("Saved to Watch later") else Loc.t("Removed from Watch later")
         }
     }
 
@@ -474,11 +474,11 @@ class PlayerState(private val scope: CoroutineScope) {
         if (Account.signedIn) {
             scope.launch {
                 runCatching { InnerTube.setInWatchLater(video.id, true) }
-                    .onSuccess { actionMessage = "Saved to Watch later" }
-                    .onFailure { actionMessage = "Saved to Watch later on this device"; Log.w(TAG, "watch later ${video.id}", it) }
+                    .onSuccess { actionMessage = Loc.t("Saved to Watch later") }
+                    .onFailure { actionMessage = Loc.t("Saved to Watch later on this device"); Log.w(TAG, "watch later ${video.id}", it) }
             }
         } else {
-            actionMessage = "Saved to Watch later"
+            actionMessage = Loc.t("Saved to Watch later")
         }
     }
 
@@ -513,13 +513,13 @@ class PlayerState(private val scope: CoroutineScope) {
                 val cues = CaptionLoader.load(track)
                 if (captionTrack?.key == key) {
                     captionCues = cues
-                    if (cues.isEmpty()) captionsError = "This video has no readable captions in that track."
+                    if (cues.isEmpty()) captionsError = Loc.t("This video has no readable captions in that track.")
                 }
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {
                 if (captionTrack?.key == key) {
-                    captionsError = "Captions couldn't be loaded. Check your connection and try again."
+                    captionsError = Loc.t("Captions couldn't be loaded. Check your connection and try again.")
                     Log.w(TAG, "captions for ${current?.id} failed", failure)
                 }
             } finally {
@@ -728,9 +728,9 @@ class PlayerState(private val scope: CoroutineScope) {
             if (e.errorCode == PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS && StreamRecovery.recovering == current?.id) return
             error = when (e.errorCode) {
                 PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED,
-                PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT -> "Lost the connection. Check your network and try again."
-                PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS -> "YouTube refused the stream. Try again."
-                else -> "This video couldn't be played."
+                PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT -> Loc.t("Lost the connection. Check your network and try again.")
+                PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS -> Loc.t("YouTube refused the stream. Try again.")
+                else -> Loc.t("This video couldn't be played.")
             }
         }
     }
@@ -759,7 +759,7 @@ class PlayerState(private val scope: CoroutineScope) {
                 format.codecs?.startsWith("av01") == true -> "AV1"
                 else -> format.codecs ?: format.sampleMimeType ?: "?"
             }
-            val auto = if (formats.size > 1) "Auto" else null
+            val auto = if (formats.size > 1) Loc.t("Auto") else null
             playingFormat = listOfNotNull(auto, "${format.width}×${format.height}", codec, format.id?.substringAfterLast(":")?.let { "itag $it" }).joinToString(" · ")
         }
     }

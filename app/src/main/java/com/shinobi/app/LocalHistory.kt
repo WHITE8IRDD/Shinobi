@@ -53,8 +53,20 @@ object LocalHistory {
     var followedChannels by mutableStateOf<List<ChannelRef>>(emptyList())
         private set
 
-    /** Bumped when related videos are cached for a newly watched video. */
+    /**
+     * Bumped only when a *new* related list is cached (see [cacheRelated]). It is part of the
+     * taste signature for cheap in-memory re-ranking, but never triggers a network reload by
+     * itself — that is what used to make Home reload itself forever.
+     */
     var relatedVersion by mutableIntStateOf(0)
+        private set
+
+    /**
+     * The taste-relevant part of [tasteSignature]: what the user watched and searched for.
+     * Kept as state and recomputed on writes rather than on reads, so screens can observe it
+     * without building a string on every recomposition.
+     */
+    var tasteKey by mutableStateOf("")
         private set
 
     private val relatedCache = ConcurrentHashMap<String, List<VideoItem>>()
@@ -65,17 +77,20 @@ object LocalHistory {
 
     /**
      * Reactive signature of the user's latest taste signals (recent watched videos + recent
-     * search queries + newly arrived related items). Home observes this to refine its feed.
+     * search queries). Home observes this to refine its feed.
      */
     val tasteSignature: String
-        get() = buildString {
+        get() = "$tasteKey|$relatedVersion"
+
+    private fun refreshTasteKey() {
+        tasteKey = buildString {
             entries.take(8).forEach { e ->
                 append(e.video.id).append(':').append(e.video.channel).append(',')
             }
             append('|')
             recentQueries.take(5).forEach { q -> append(q).append(',') }
-            append('|').append(relatedVersion)
         }
+    }
 
     fun init(context: Context) {
         val p = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE).also { prefs = it }
@@ -100,6 +115,7 @@ object LocalHistory {
                 }
             }.distinct().take(MAX_QUERIES)
         }.getOrDefault(emptyList())
+        refreshTasteKey()
 
         likedVideos = parseVideoList(p.getString(KEY_LIKED, null))
         watchLaterVideos = parseVideoList(p.getString(KEY_WATCH_LATER, null))
@@ -151,6 +167,7 @@ object LocalHistory {
         } else video
         entries = (listOf(LocalHistoryEntry(merged, watchedAtMs)) + entries.filter { it.video.id != video.id })
             .take(MAX_ENTRIES)
+        refreshTasteKey()
         persistEntries()
     }
 
@@ -160,6 +177,7 @@ object LocalHistory {
         if (clean.isBlank()) return
         recentQueries = (listOf(clean) + recentQueries.filterNot { it.equals(clean, ignoreCase = true) })
             .take(MAX_QUERIES)
+        refreshTasteKey()
         persistQueries()
     }
 
@@ -168,17 +186,28 @@ object LocalHistory {
         val updated = recentQueries.filterNot { it.equals(query, ignoreCase = true) }
         if (updated.size == recentQueries.size) return
         recentQueries = updated
+        refreshTasteKey()
         persistQueries()
     }
 
     @Synchronized
     fun clearSearches() {
         recentQueries = emptyList()
+        refreshTasteKey()
         prefs?.edit()?.remove(KEY_QUERIES)?.apply()
     }
 
     fun cacheRelated(videoId: String, related: List<VideoItem>) {
         if (videoId.isBlank() || related.isEmpty()) return
+        // Only a *change* may bump the version. Bumping it for an identical list (which the
+        // recommendation engine does on every pass) used to change the taste signature,
+        // which made Home reload itself in a loop.
+        val previous = relatedCache[videoId]
+        if (previous != null && previous.size == related.size &&
+            previous.asSequence().map { it.id }.toList() == related.asSequence().map { it.id }.toList()
+        ) {
+            return
+        }
         relatedCache[videoId] = related
         relatedVersion++
     }
@@ -190,6 +219,7 @@ object LocalHistory {
         val updated = entries.filterNot { it.video.id == videoId }
         if (updated.size == entries.size) return
         entries = updated
+        refreshTasteKey()
         persistEntries()
     }
 
@@ -197,6 +227,7 @@ object LocalHistory {
     fun clear() {
         entries = emptyList()
         relatedCache.clear()
+        refreshTasteKey()
         prefs?.edit()?.remove(KEY_ENTRIES)?.apply()
     }
 
@@ -302,38 +333,64 @@ object LocalHistory {
 
     // ── Persistence helpers ──
 
+    /**
+     * Persistence runs on one background thread: recording a video happens on the tap that
+     * opens it (and again when its details land), which is exactly when the app must not be
+     * serializing a hundred history entries on the main thread. State is still updated
+     * synchronously, so every screen sees the change immediately.
+     */
+    private val disk = java.util.concurrent.Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "shinobi-history").apply { isDaemon = true }
+    }
+
     private fun persistEntries() {
-        val array = JSONArray()
-        entries.forEach { entry ->
-            array.put(entry.video.toJson().put("watchedAt", entry.watchedAtMs))
+        val snapshot = entries
+        val p = prefs ?: return
+        disk.execute {
+            val array = JSONArray()
+            snapshot.forEach { entry ->
+                array.put(entry.video.toJson().put("watchedAt", entry.watchedAtMs))
+            }
+            p.edit().putString(KEY_ENTRIES, array.toString()).apply()
         }
-        prefs?.edit()?.putString(KEY_ENTRIES, array.toString())?.apply()
     }
 
     private fun persistQueries() {
-        val array = JSONArray()
-        recentQueries.forEach { array.put(it) }
-        prefs?.edit()?.putString(KEY_QUERIES, array.toString())?.apply()
+        val snapshot = recentQueries
+        val p = prefs ?: return
+        disk.execute {
+            val array = JSONArray()
+            snapshot.forEach { array.put(it) }
+            p.edit().putString(KEY_QUERIES, array.toString()).apply()
+        }
     }
 
     private fun persistVideoList(key: String, list: List<VideoItem>) {
-        val array = JSONArray()
-        list.forEach { array.put(it.toJson()) }
-        prefs?.edit()?.putString(key, array.toString())?.apply()
+        val snapshot = list
+        val p = prefs ?: return
+        disk.execute {
+            val array = JSONArray()
+            snapshot.forEach { array.put(it.toJson()) }
+            p.edit().putString(key, array.toString()).apply()
+        }
     }
 
     private fun persistChannels() {
-        val array = JSONArray()
-        followedChannels.forEach { ch ->
-            array.put(
-                JSONObject()
-                    .put("id", ch.id)
-                    .put("name", ch.name)
-                    .put("avatar", ch.avatar)
-                    .put("url", ch.url),
-            )
+        val snapshot = followedChannels
+        val p = prefs ?: return
+        disk.execute {
+            val array = JSONArray()
+            snapshot.forEach { ch ->
+                array.put(
+                    JSONObject()
+                        .put("id", ch.id)
+                        .put("name", ch.name)
+                        .put("avatar", ch.avatar)
+                        .put("url", ch.url),
+                )
+            }
+            p.edit().putString(KEY_CHANNELS, array.toString()).apply()
         }
-        prefs?.edit()?.putString(KEY_CHANNELS, array.toString())?.apply()
     }
 
     private fun parseVideoList(raw: String?): List<VideoItem> = runCatching {
@@ -362,7 +419,7 @@ object LocalHistory {
         val id = optString("id", "").takeIf { it.isNotBlank() } ?: return null
         return VideoItem(
             id = id,
-            title = optString("title", "").ifBlank { "Untitled video" },
+            title = optString("title", "").ifBlank { Loc.t("Untitled video") },
             channel = optString("channel", ""),
             channelUrl = nullableString("channelUrl"),
             thumbnail = nullableString("thumbnail"),

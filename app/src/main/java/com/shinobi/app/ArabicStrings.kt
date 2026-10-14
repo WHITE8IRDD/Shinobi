@@ -1,0 +1,320 @@
+package com.shinobi.app
+
+/**
+ * Arabic copy for Shinobi, keyed by the exact English string used in the UI. Keeping the
+ * English text as the key means a string can never go missing: an untranslated key simply
+ * renders in English instead of disappearing.
+ *
+ * Register: Modern Standard Arabic, the same register the official YouTube app uses, with
+ * Latin product names (YouTube, Google, SponsorBlock, Shorts) left as they are — YouTube's
+ * own Arabic build does the same.
+ */
+internal val ARABIC_STRINGS: Map<String, String> = mapOf(
+    // ── Shell, navigation, shared actions ──────────────────────────────────────
+    "Home" to "الرئيسية",
+    "Search" to "البحث",
+    "Library" to "المكتبة",
+    "Subscriptions" to "الاشتراكات",
+    "Try again" to "إعادة المحاولة",
+    "Settings & Appearance" to "الإعدادات والمظهر",
+    "Sign in" to "تسجيل الدخول",
+    "Sign out" to "تسجيل الخروج",
+    "Sign in with Google" to "تسجيل الدخول عبر Google",
+    "Sign in to continue" to "سجّل الدخول للمتابعة",
+    "Share" to "مشاركة",
+    "Like" to "إعجاب",
+    "Dislike" to "عدم الإعجاب",
+    "Save" to "حفظ",
+    "Saved" to "تم الحفظ",
+    "Subscribe" to "اشتراك",
+    "Subscribed" to "مشترك",
+    "Comments" to "التعليقات",
+    "More options" to "مزيد من الخيارات",
+    "Remove from queue" to "إزالة من قائمة الانتظار",
+    "Selected" to "محدَّد",
+    "Refresh recommendations" to "تحديث التوصيات",
+    "View all" to "عرض الكل",
+    "Clear" to "مسح",
+    "Undo" to "تراجع",
+    "Cancel reply" to "إلغاء الرد",
+    "Close comments" to "إغلاق التعليقات",
+    "Added to queue" to "أُضيف إلى قائمة الانتظار",
+    "Playing next" to "التشغيل التالي",
+    "More videos" to "مزيد من الفيديوهات",
+    "Loading…" to "جارٍ التحميل…",
+
+    // ── Home ───────────────────────────────────────────────────────────────────
+    "For you" to "مخصَّص لك",
+    "More Shorts for you" to "مزيد من Shorts لك",
+    "Couldn't load suggestions" to "تعذّر تحميل الاقتراحات",
+    "Couldn't reach YouTube" to "تعذّر الوصول إلى YouTube",
+    "Personalized on this device" to "مخصَّص على هذا الجهاز",
+    "Watch or search to start" to "شاهد أو ابحث للبدء",
+    "Your Home feed starts clean. As soon as you search for or watch a video, Shinobi gathers videos and Shorts in that same style — privately on your phone, with no account needed." to
+        "خلاصتك تبدأ نظيفة. بمجرد أن تبحث أو تشاهد فيديو، يجمع لك Shinobi فيديوهات وShorts على النمط نفسه — بشكل خاص على هاتفك، ودون الحاجة إلى حساب.",
+    "Search videos" to "ابحث عن فيديوهات",
+    "Watch Shorts" to "شاهد Shorts",
+    "Or pick a topic to seed your feed" to "أو اختر موضوعًا لبدء خلاصتك",
+    "Tap any interest below to populate Home with videos and Shorts right away." to
+        "اضغط أي اهتمام أدناه لتُملأ الرئيسية بالفيديوهات وShorts فورًا.",
+    "Learns your taste" to "يتعلّم ذوقك",
+    "Every video you watch refines Home in that creator and topic style." to
+        "كل فيديو تشاهده يصقل الرئيسية على نمط هذا المبدع وهذا الموضوع.",
+    "Zero ads, ever" to "بلا إعلانات، دائمًا",
+    "Ad-free streams plus automatic SponsorBlock segment skipping." to
+        "بث بلا إعلانات مع تخطّي تلقائي لمقاطع SponsorBlock.",
+    "Private history" to "سجل خاص",
+    "Watched videos, likes and Watch later stay locally on this phone." to
+        "تبقى الفيديوهات المشاهدة والإعجابات والمشاهدة لاحقًا على هذا الهاتف.",
+    "Optional Google sync" to "مزامنة Google اختيارية",
+    "Tap to sign in if you want your cloud subscriptions and playlists." to
+        "اضغط لتسجيل الدخول إذا أردت اشتراكاتك وقوائم التشغيل السحابية.",
+    "Mix Shorts with videos" to "دمج Shorts مع الفيديوهات",
+    "Shorts and videos together in For you" to "مقاطع Shorts والفيديوهات معًا في \"مخصَّص لك\"",
+    "Auto-hide Shorts controls" to "إخفاء أدوات Shorts تلقائيًا",
+    "Hide the controls while a Short plays, and bring them back with a tap." to
+        "إخفاء الأدوات أثناء تشغيل مقطع Short وإظهارها بلمسة.",
+    "Keep the bottom bar off the Shorts screen" to "إخفاء الشريط السفلي في شاشة Shorts",
+
+    // ── Welcome topics (also used as search seeds) ─────────────────────────────
+    "Science & Space" to "العلوم والفضاء",
+    "Tech Reviews" to "مراجعات التقنية",
+    "Lo-Fi Beats" to "موسيقى هادئة",
+    "Game Design" to "تصميم الألعاب",
+    "Nature 4K" to "الطبيعة 4K",
+    "Cooking" to "الطبخ",
+    "Coding & AI" to "البرمجة والذكاء الاصطناعي",
+    "Filmmaking" to "صناعة الأفلام",
+
+    // ── Subscriptions ──────────────────────────────────────────────────────────
+    "Sync your YouTube subscriptions" to "زامن اشتراكاتك في YouTube",
+    "Channels you watch or subscribe to appear above automatically. Sign in with Google anytime for cloud sync." to
+        "تظهر القنوات التي تشاهدها أو تشترك فيها أعلاه تلقائيًا. سجّل الدخول عبر Google في أي وقت للمزامنة السحابية.",
+    "Channels you follow" to "القنوات التي تتابعها",
+    "Follow creators your way" to "تابع المبدعين بطريقتك",
+    "Subscribe to any channel while watching a video — even without signing in — or connect your Google account to bring in all the channels you already follow on YouTube." to
+        "اشترك في أي قناة أثناء مشاهدة فيديو — حتى بدون تسجيل الدخول — أو اربط حساب Google لجلب كل القنوات التي تتابعها على YouTube.",
+    "Find channels" to "ابحث عن قنوات",
+    "Local following" to "متابعة على الجهاز",
+    "Tap Subscribe on any video or channel to follow it right on this device." to
+        "اضغط \"اشتراك\" على أي فيديو أو قناة لمتابعتها على هذا الجهاز.",
+    "Automatic discovery" to "اكتشاف تلقائي",
+    "Channels from your recent watch history appear here with their latest uploads." to
+        "تظهر هنا القنوات من سجل مشاهدتك الأخير مع أحدث ما نُشر فيها.",
+    "Following" to "تتابع",
+    "Unfollowed" to "أُلغي متابعة",
+    "Couldn't update your subscription." to "تعذّر تحديث اشتراكك.",
+    "Couldn't load this channel" to "تعذّر تحميل هذه القناة",
+
+    // ── Library ────────────────────────────────────────────────────────────────
+    "Collections on this device" to "المجموعات على هذا الجهاز",
+    "Watch later" to "المشاهدة لاحقًا",
+    "Liked videos" to "الفيديوهات التي أعجبتني",
+    "Recent on this device" to "الأحدث على هذا الجهاز",
+    "No videos watched yet" to "لم تُشاهد أي فيديو بعد",
+    "Videos and Shorts you watch stay privately on this phone and power your Home feed." to
+        "تبقى الفيديوهات وShorts التي تشاهدها خاصة على هذا الهاتف، وهي التي تبني خلاصتك في الرئيسية.",
+    "Remove from local history" to "إزالة من السجل المحلي",
+    "Recent searches" to "عمليات البحث الأخيرة",
+    "Sync with your YouTube account" to "المزامنة مع حسابك في YouTube",
+    "Sign in with Google to access your cloud playlists, Watch later and synced watch history." to
+        "سجّل الدخول عبر Google للوصول إلى قوائم التشغيل والمشاهدة لاحقًا وسجل المشاهدة المزامَن.",
+    "Nothing watched yet." to "لا شيء مُشاهد بعد.",
+    "Nothing saved here yet" to "لا يوجد محفوظ هنا بعد",
+    "Tap Save on any video or Short to keep it in Watch later on this device." to
+        "اضغط \"حفظ\" على أي فيديو أو Short ليبقى في \"المشاهدة لاحقًا\" على هذا الجهاز.",
+    "Tap Like on any video or Short to add it to your Liked videos on this device." to
+        "اضغط \"إعجاب\" على أي فيديو أو Short ليُضاف إلى فيديوهاتك التي أعجبتك على هذا الجهاز.",
+    "Nothing here yet" to "لا يوجد شيء هنا بعد",
+    "Videos you add to this playlist will show up here." to "ستظهر هنا الفيديوهات التي تضيفها إلى قائمة التشغيل هذه.",
+
+    // ── Search ─────────────────────────────────────────────────────────────────
+    "Search YouTube videos & Shorts" to "ابحث في فيديوهات وShorts على YouTube",
+    "Search failed" to "فشل البحث",
+    "Search didn't load" to "لم يتم تحميل البحث",
+    "Search without the ads" to "ابحث بلا إعلانات",
+    "Videos and Shorts play straight away with no ads, and automatically teach your Home feed what you like." to
+        "تُشغَّل الفيديوهات وShorts فورًا بلا إعلانات، وتُعلِّم خلاصتك في الرئيسية ما يعجبك تلقائيًا.",
+    "Nothing found" to "لا توجد نتائج",
+
+    // ── Long-press options, queue, captions ────────────────────────────────────
+    "Play next" to "التشغيل التالي",
+    "Add to queue" to "إضافة إلى قائمة الانتظار",
+    "Save to Watch later" to "الحفظ في المشاهدة لاحقًا",
+    "Queue" to "قائمة الانتظار",
+    "Nothing queued. Press and hold a video to add it." to "لا شيء في قائمة الانتظار. اضغط مطوّلًا على فيديو لإضافته.",
+    "Captions" to "الترجمات",
+    "Choose a language. Your choice is remembered on this device." to
+        "اختر لغة. سيُحفظ اختيارك على هذا الجهاز.",
+    "Off" to "إيقاف",
+    "No caption tracks are available for this video." to "لا تتوفر مسارات ترجمة لهذا الفيديو.",
+    "Auto-generated" to "مُنشأة تلقائيًا",
+    "Creator-provided" to "من صانع المحتوى",
+    "Loading captions…" to "جارٍ تحميل الترجمات…",
+    "SponsorBlock" to "SponsorBlock",
+    "Skip sponsor reads and other segments" to "تخطّي فقرات الرعاية والمقاطع الأخرى",
+    "Segments from SponsorBlock (sponsor.ajay.app), a community project. Data licensed CC BY-NC-SA 4.0." to
+        "المقاطع من SponsorBlock (sponsor.ajay.app)، مشروع مجتمعي. البيانات بترخيص CC BY-NC-SA 4.0.",
+    "Skip" to "تخطّي",
+    "Ask" to "اسأل",
+    "Show" to "أظهر",
+    "Sponsor" to "رعاية",
+    "Self-promotion" to "ترويج ذاتي",
+    "Like and subscribe reminder" to "تذكير بالإعجاب والاشتراك",
+    "Intro" to "المقدمة",
+    "Outro and credits" to "الخاتمة والحقوق",
+    "Preview and recap" to "معاينة وملخص",
+    "Non-music part of a music video" to "الجزء غير الموسيقي من فيديو موسيقي",
+    "Filler tangent" to "محتوى حشو",
+    "Skipped · Undo" to "تم التخطي · تراجع",
+
+    // ── Appearance settings ────────────────────────────────────────────────────
+    "Appearance" to "المظهر",
+    "System" to "النظام",
+    "Light" to "فاتح",
+    "Dark" to "داكن",
+    "Light mode" to "الوضع الفاتح",
+    "Night mode" to "الوضع الليلي",
+    "Light theme" to "مظهر فاتح",
+    "Dark theme" to "مظهر داكن",
+    "Wallpaper" to "خلفية الجهاز",
+    "Theme color" to "لون المظهر",
+    "Language" to "اللغة",
+    "English" to "الإنجليزية",
+    "Arabic" to "العربية",
+    "Default" to "افتراضي",
+    "Feed" to "الخلاصة",
+    "Playback & Feed" to "التشغيل والخلاصة",
+    "Cream Rose" to "الورد الكريمي",
+    "Amethyst" to "الجمشت",
+    "Lilac Air" to "الليلكي",
+    "Cranberry" to "التوت",
+    "Pumpkin" to "القرع",
+    "Moonstone" to "حجر القمر",
+    "Iris" to "السوسن",
+    "Harbor" to "الميناء",
+    "Shinobi Ember" to "جمر شينوبي",
+
+    // ── Player ─────────────────────────────────────────────────────────────────
+    "Picture-in-picture" to "صورة داخل صورة",
+    "Picture-in-picture is turned off for Shinobi in Settings." to "خاصية \"صورة داخل صورة\" مُعطَّلة لـ Shinobi في إعدادات النظام.",
+    "Back 10 seconds" to "رجوع 10 ثوانٍ",
+    "Forward 10 seconds" to "تقدّم 10 ثوانٍ",
+    "Fullscreen" to "ملء الشاشة",
+    "Exit fullscreen" to "الخروج من ملء الشاشة",
+    "Quality" to "الجودة",
+    "Auto" to "تلقائي",
+    "Best up to 1080p" to "الأفضل حتى 1080p",
+    "Data saver" to "توفير البيانات",
+    "Full HD" to "دقة كاملة",
+    "Playback speed" to "سرعة التشغيل",
+    "Audio only is on" to "الصوت فقط مُفعَّل",
+    "Audio only" to "الصوت فقط",
+    "Remember for every video" to "التذكّر لكل الفيديوهات",
+    "Every video" to "كل الفيديوهات",
+    "This video only" to "هذا الفيديو فقط",
+    "Until you set it back to 1×" to "حتى تعيدها إلى 1×",
+    "Saved to Watch later" to "حُفظ في المشاهدة لاحقًا",
+    "Removed from Watch later" to "أُزيل من المشاهدة لاحقًا",
+    "Saved locally on this device" to "حُفظ محليًا على هذا الجهاز",
+    "Saved to Watch later on this device" to "حُفظ في المشاهدة لاحقًا على هذا الجهاز",
+    "No playable stream was found for this video." to "لم يُعثر على بث قابل للتشغيل لهذا الفيديو.",
+    "This video couldn't be played." to "تعذّر تشغيل هذا الفيديو.",
+    "Lost the connection. Check your network and try again." to "انقطع الاتصال. تحقق من شبكتك وحاول مرة أخرى.",
+    "YouTube refused the stream. Try again." to "رفض YouTube البث. حاول مرة أخرى.",
+    "Captions couldn't be loaded. Check your connection and try again." to "تعذّر تحميل الترجمات. تحقق من اتصالك وحاول مرة أخرى.",
+    "This video has no readable captions in that track." to "لا توجد ترجمات قابلة للقراءة في هذا المسار.",
+    "Playing" to "يُشغَّل",
+
+    // ── Like / subscribe / comments feedback ───────────────────────────────────
+    "Couldn't update your like." to "تعذّر تحديث إعجابك.",
+    "Couldn't post your comment." to "تعذّر نشر تعليقك.",
+    "YouTube didn't accept the comment." to "لم يقبل YouTube التعليق.",
+    "Couldn't like that comment." to "تعذّر الإعجاب بهذا التعليق.",
+    "Comments are turned off for this video." to "التعليقات مُعطَّلة لهذا الفيديو.",
+    "Comments are turned off or can't be posted on this video." to "التعليقات مُعطَّلة أو لا يمكن نشرها على هذا الفيديو.",
+    "No comments yet. Add the first one." to "لا توجد تعليقات بعد. أضف الأول.",
+    "No comments yet." to "لا توجد تعليقات بعد.",
+    "Sign in to comment." to "سجّل الدخول للتعليق.",
+    "Add a comment…" to "أضف تعليقًا…",
+    "Add a reply…" to "أضف ردًّا…",
+    "Replying to" to "ردًّا على",
+    "Hearted by creator" to "أعجب به صانع المحتوى",
+    "Hide replies" to "إخفاء الردود",
+    "Show more replies" to "عرض مزيد من الردود",
+    "just now" to "الآن",
+
+    // ── Sign-in ────────────────────────────────────────────────────────────────
+    "Sign in to YouTube" to "تسجيل الدخول إلى YouTube",
+    "accounts.google.com · kept encrypted on this phone" to "‏accounts.google.com · محفوظة مشفَّرة على هذا الهاتف",
+    "Finishing sign-in…" to "جارٍ إكمال تسجيل الدخول…",
+    "Signed in, but YouTube didn't answer. Check your connection and try again." to
+        "تم تسجيل الدخول، لكن YouTube لم يستجب. تحقق من اتصالك وحاول مرة أخرى.",
+    "Your YouTube, without the ads" to "YouTube الذي تحبه، بلا إعلانات",
+    "Sign in to get your recommendations, subscriptions, history and playlists. Likes, subscribes, Watch later and watch history sync back to your account.\n\nGoogle treats unofficial apps as against its terms and can suspend accounts that use them. A secondary Google account keeps that risk away from your main one." to
+        "سجّل الدخول للحصول على توصياتك واشتراكاتك وسجلك وقوائم التشغيل. تتزامن الإعجابات والاشتراكات و\"المشاهدة لاحقًا\" وسجل المشاهدة مع حسابك.\n\nتعتبر Google التطبيقات غير الرسمية مخالفة لشروطها، وقد توقف حسابات تستخدمها. استخدم حساب Google ثانويًا لإبعاد هذا الخطر عن حسابك الأساسي.",
+    "Not signed in" to "لم تسجّل الدخول",
+    "YouTube account" to "حساب YouTube",
+    "YouTube rejected the session" to "رفض YouTube الجلسة",
+
+    // ── Empty / error states ───────────────────────────────────────────────────
+    "You're signed out." to "أنت غير مسجَّل الدخول.",
+    "Couldn't load this" to "تعذّر تحميل هذا",
+    "Couldn't load Shorts" to "تعذّر تحميل Shorts",
+    "Loading Shorts…" to "جارٍ تحميل Shorts…",
+    "This video is age-restricted and needs a YouTube account to watch." to
+        "هذا الفيديو مقيَّد بالعمر ويتطلب حساب YouTube للمشاهدة.",
+    "This video isn't available in your country." to "هذا الفيديو غير متاح في بلدك.",
+    "YouTube is asking to confirm you're not a bot. Try again in a few minutes." to
+        "يطلب YouTube تأكيد أنك لست روبوتًا. حاول مرة أخرى بعد دقائق.",
+    "This video is private." to "هذا الفيديو خاص.",
+    "This is a members-only video. Shinobi can't play members-only videos yet." to
+        "هذا الفيديو للأعضاء فقط، وShinobi لا يشغّل فيديوهات الأعضاء حتى الآن.",
+    "Members only" to "للأعضاء فقط",
+    "This video isn't available." to "هذا الفيديو غير متاح.",
+    "YouTube is rate-limiting requests right now. Try again in a minute." to
+        "يحدّ YouTube من الطلبات الآن. حاول مرة أخرى بعد دقيقة.",
+    "Couldn't reach YouTube. Check your connection." to "تعذّر الوصول إلى YouTube. تحقق من اتصالك.",
+    "Something went wrong loading this. Try again." to "حدث خطأ أثناء تحميل هذا. حاول مرة أخرى.",
+    "Untitled video" to "فيديو بلا عنوان",
+
+    // ── Counts and units ───────────────────────────────────────────────────────
+    "Cancel" to "إلغاء",
+    "Unlike" to "إلغاء الإعجاب",
+    "Skipped" to "تم تخطي",
+    "Version" to "الإصدار",
+    "Back" to "رجوع",
+    "Videos" to "الفيديوهات",
+    "Post" to "نشر",
+    "Pinned" to "مثبَّت",
+    "Reply" to "رد",
+    "Close" to "إغلاق",
+    "Remove" to "إزالة",
+    "History" to "السجل",
+    "Playlists" to "قوائم التشغيل",
+    "Play" to "تشغيل",
+    "Pause" to "إيقاف مؤقت",
+    "No videos matched" to "لا توجد فيديوهات مطابقة",
+    "No ads, no ad SDKs, no analytics and no trackers — in this build and every other. There is nothing to disable here, and nothing that could be switched on later: the project's build refuses to compile with an advertising or tracking SDK in it.\n\nSponsor reads inside a video are skipped automatically where the community has submitted them; the SponsorBlock controls above decide how." to "لا إعلانات، ولا مكتبات إعلانية، ولا تحليلات، ولا أدوات تتبّع — في هذا الإصدار وفي كل إصدار. لا شيء يمكن تعطيله هنا، ولا شيء يمكن تشغيله لاحقًا: بناء المشروع يرفض أن يُترجم إلى تطبيق يحتوي على مكتبة إعلانية أو أداة تتبّع.\n\nتُتخطّى فقرات الرعاية داخل الفيديو تلقائيًا حيثما أرسلها المجتمع، وأزرار SponsorBlock أعلاه هي التي تحدّد الطريقة.",
+    "Free software under the GNU GPL version 3, built with NewPipeExtractor, AndroidX Media3 and Jetpack Compose. Not affiliated with YouTube or Google." to "برنامج حرّ بموجب رخصة GNU GPL الإصدار 3، مبنيّ بـ NewPipeExtractor وAndroidX Media3 وJetpack Compose. غير مرتبط بـ YouTube أو Google.",
+    "English is the default. Arabic mirrors the whole app right-to-left." to
+        "الإنجليزية هي اللغة الافتراضية. العربية تعكس التطبيق كاملًا من اليمين إلى اليسار.",
+    // SponsorBlock category short names, as they appear in skip notes.
+    "sponsor" to "رعاية",
+    "selfpromo" to "ترويج ذاتي",
+    "interaction" to "تذكير بالاشتراك",
+    "intro" to "مقدمة",
+    "outro" to "خاتمة",
+    "preview" to "معاينة",
+    "non-music" to "خارج الموسيقى",
+    "filler" to "حشو",
+
+    // Counts and units
+    "views" to "مشاهدة",
+    "subscribers" to "مشترك",
+    "likes" to "إعجاب",
+    "videos" to "مقطع فيديو",
+    "Watched" to "شوهد",
+    "Short" to "Short",
+    "Shorts" to "Shorts",
+)

@@ -40,7 +40,7 @@ object CommentPosting {
             val vp = cache.getOrPut(videoId) { VideoParams() }
             if (!vp.started) loadFirstPage(videoId, vp)
             vp.createComment
-        } ?: throw IOException("Comments are turned off or can't be posted on this video.")
+        } ?: throw IOException(Loc.t("Comments are turned off or can't be posted on this video."))
         checkPosted(
             InnerTube.post("comment/create_comment", JSONObject().put("commentText", text).put("createCommentParams", params)),
         )
@@ -155,7 +155,7 @@ object CommentPosting {
         val text = response.toString()
         if ("STATUS_FAILED" in text || !(text.contains("createCommentAction") || text.contains("createCommentReplyAction") || text.contains("STATUS_SUCCEEDED"))) {
             Log.w("Shinobi", "comment post response: ${text.take(600)}")
-            throw IOException("YouTube didn't accept the comment.")
+            throw IOException(Loc.t("YouTube didn't accept the comment."))
         }
     }
 }

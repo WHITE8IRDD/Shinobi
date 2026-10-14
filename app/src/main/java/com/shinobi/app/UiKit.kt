@@ -19,7 +19,19 @@ import androidx.compose.foundation.layout.mandatorySystemGestures
 import androidx.compose.foundation.layout.windowInsetsBottomHeight
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import android.view.HapticFeedbackConstants
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.DarkMode
+import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -28,6 +40,7 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -140,6 +153,52 @@ fun CircleAction(icon: ImageVector, contentDescription: String, onClick: () -> U
         contentAlignment = Alignment.Center,
     ) {
         Icon(icon, contentDescription, tint = c.onSurface, modifier = Modifier.size(22.dp))
+    }
+}
+
+/**
+ * The Light / Night switch, in every tab's header (product owner, 2026-10-14). One tap swaps
+ * the theme for the whole app; the icon crossfades between moon and sun so the change is
+ * legible before the screen has even repainted. Tapping it while the app is on "System" moves
+ * to the opposite of what is on screen right now, which is what a person expects from a
+ * toggle.
+ */
+@Composable
+fun ThemeToggleAction() {
+    val c = MaterialTheme.colorScheme
+    val dark = isDarkTheme()
+    val reduced = rememberReducedMotion()
+    val view = LocalView.current
+    Box(
+        modifier = Modifier
+            .size(44.dp)
+            .pressable {
+                view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
+                ThemeSettings.chooseMode(if (dark) "light" else "dark")
+            }
+            .clip(CircleShape)
+            .background(c.surfaceContainerHigh),
+        contentAlignment = Alignment.Center,
+    ) {
+        AnimatedContent(
+            targetState = dark,
+            transitionSpec = {
+                if (reduced) {
+                    EnterTransition.None togetherWith ExitTransition.None
+                } else {
+                    (fadeIn(tween(180)) + scaleIn(initialScale = 0.6f, animationSpec = tween(200))) togetherWith
+                        (fadeOut(tween(120)) + scaleOut(targetScale = 0.6f, animationSpec = tween(140)))
+                }
+            },
+            label = "themeToggle",
+        ) { isDark ->
+            Icon(
+                if (isDark) Icons.Rounded.LightMode else Icons.Rounded.DarkMode,
+                contentDescription = Loc.t(if (isDark) "Light mode" else "Night mode"),
+                tint = c.onSurface,
+                modifier = Modifier.size(22.dp),
+            )
+        }
     }
 }
 
@@ -318,7 +377,7 @@ fun VideoRow(video: VideoItem, onClick: () -> Unit, trailing: (@Composable () ->
             Text(video.title, fontWeight = FontWeight.Bold, fontSize = 14.sp, lineHeight = 18.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Spacer(Modifier.height(4.dp))
             Text(
-                listOfNotNull(video.channel.ifBlank { null }, video.views.takeIf { it >= 0 }?.let { "${formatCount(it)} views" }).joinToString(" · "),
+                listOfNotNull(video.channel.ifBlank { null }, video.views.takeIf { it >= 0 }?.let { Loc.views(it) }).joinToString(" · "),
                 color = c.onSurfaceVariant,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.SemiBold,
@@ -337,6 +396,31 @@ fun ResumeBar(videoId: String, modifier: Modifier = Modifier) {
     val c = MaterialTheme.colorScheme
     Box(modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 6.dp).height(4.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.45f))) {
         Box(Modifier.fillMaxWidth(progress).height(4.dp).clip(CircleShape).background(c.primary))
+    }
+}
+
+/**
+ * Placeholder cards for a list that is still on its way. Static tonal shapes: drawn once, no
+ * shimmer and no repeating animation, so a cold start never spends frames on a placeholder.
+ */
+@Composable
+fun ListSkeleton(rows: Int = 4, modifier: Modifier = Modifier) {
+    val block = MaterialTheme.colorScheme.surfaceContainerHighest
+    Column(modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+        repeat(rows) {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(16f / 9f)
+                    .clip(RoundedCornerShape(22.dp))
+                    .background(block),
+            )
+            Spacer(Modifier.height(12.dp))
+            Box(Modifier.fillMaxWidth(0.62f).height(14.dp).clip(CircleShape).background(block))
+            Spacer(Modifier.height(8.dp))
+            Box(Modifier.fillMaxWidth(0.38f).height(12.dp).clip(CircleShape).background(block))
+            Spacer(Modifier.height(22.dp))
+        }
     }
 }
 
@@ -489,6 +573,6 @@ private fun trimmed(v: Double): String =
 fun metaLine(channel: String, views: Long, uploaded: String?): String =
     listOfNotNull(
         channel.ifBlank { null },
-        views.takeIf { it >= 0 }?.let { "${formatCount(it)} views" },
+        views.takeIf { it >= 0 }?.let { Loc.views(it) },
         uploaded?.ifBlank { null },
     ).joinToString(" · ")

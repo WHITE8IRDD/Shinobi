@@ -12,9 +12,9 @@ android {
         applicationId = "com.shinobi.app"
         minSdk = 26
         targetSdk = 36
-        // Drafts carry their own name so an installed test build is identifiable in About.
-        versionCode = 3
-        versionName = "1.0.0-draft2"
+        // SHINOBI 1.0 (product owner, 2026-10-14). A release build is identifiable in About.
+        versionCode = 4
+        versionName = "1.0"
     }
 
     buildTypes {

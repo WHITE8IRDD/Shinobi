@@ -200,9 +200,9 @@ fun PlayerScreen(
                         )
                         Spacer(Modifier.height(6.dp))
                         val stats = listOfNotNull(
-                            item.views.takeIf { it >= 0 }?.let { "${formatCount(it)} views" },
+                            item.views.takeIf { it >= 0 }?.let { Loc.views(it) },
                             item.uploaded?.ifBlank { null },
-                            details?.likes?.takeIf { it > 0 }?.let { "${formatCount(it)} likes" },
+                            details?.likes?.takeIf { it > 0 }?.let { Loc.likes(it) },
                         ).joinToString(" · ")
                         val hasDescription = !details?.description.isNullOrBlank()
                         Row(
@@ -242,7 +242,7 @@ fun PlayerScreen(
                             Column(Modifier.weight(1f)) {
                                 Text(item.channel, fontWeight = FontWeight.ExtraBold, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 details?.subscribers?.takeIf { it > 0 }?.let {
-                                    Text("${formatCount(it)} subscribers", color = c.onSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                    Text(Loc.subscribers(it), color = c.onSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                                 }
                             }
                             }
@@ -258,7 +258,7 @@ fun PlayerScreen(
                 }
                 val related = details?.related.orEmpty()
                 if (related.isNotEmpty()) {
-                    item(key = "moreTitle") { SectionTitle("More videos") }
+                    item(key = "moreTitle") { SectionTitle(Loc.t("More videos")) }
                     items(related, key = { "rel-" + it.id }) { video ->
                         Box(Modifier.padding(horizontal = 20.dp)) { VideoRow(video, onClick = { onOpen(video) }) }
                     }
@@ -421,7 +421,7 @@ private fun SubscribeButton(subscribed: Boolean, onClick: () -> Unit) {
             Spacer(Modifier.width(6.dp))
         }
         Text(
-            if (subscribed) "Subscribed" else "Subscribe",
+            if (subscribed) Loc.t("Subscribed") else Loc.t("Subscribe"),
             color = if (subscribed) c.onSecondaryContainer else c.surface,
             fontWeight = FontWeight.ExtraBold, fontSize = 14.sp,
         )
@@ -475,7 +475,7 @@ private fun AccountActions(state: PlayerState) {
             flourish = Flourish.Pop,
             labelRollsUp = rising,
             shape = RoundedCornerShape(topStart = 22.dp, bottomStart = 22.dp, topEnd = 8.dp, bottomEnd = 8.dp),
-            description = "Like",
+            description = Loc.t("Like"),
         ) { state.setLike(LikeStatus.Like) }
         ActionPill(
             icon = if (like == LikeStatus.Dislike) Icons.Rounded.ThumbDown else Icons.Outlined.ThumbDown,
@@ -483,16 +483,16 @@ private fun AccountActions(state: PlayerState) {
             active = like == LikeStatus.Dislike,
             flourish = Flourish.Droop,
             shape = RoundedCornerShape(topStart = 8.dp, bottomStart = 8.dp, topEnd = 22.dp, bottomEnd = 22.dp),
-            description = "Dislike",
+            description = Loc.t("Dislike"),
         ) { state.setLike(LikeStatus.Dislike) }
     }
     ActionPill(
         icon = if (state.inWatchLater) Icons.Rounded.WatchLater else Icons.Outlined.WatchLater,
-        label = if (state.inWatchLater) "Saved" else "Save",
+        label = if (state.inWatchLater) Loc.t("Saved") else Loc.t("Save"),
         active = state.inWatchLater,
         flourish = Flourish.Drop,
         shape = RoundedCornerShape(22.dp),
-        description = "Save to Watch later",
+        description = Loc.t("Save to Watch later"),
     ) { state.toggleWatchLater() }
 }
 
@@ -612,7 +612,7 @@ private fun RowScope.MiniDetails(state: PlayerState, interactive: Boolean) {
                 onClick = state::togglePlay,
             )
             Box(Modifier.size(40.dp).pressable(enabled = interactive, onClick = state::close), contentAlignment = Alignment.Center) {
-                Icon(Icons.Rounded.Close, "Close", tint = c.onSurfaceVariant)
+                Icon(Icons.Rounded.Close, Loc.t("Close"), tint = c.onSurfaceVariant)
             }
         }
         val progress = if (state.durationMs > 0) (state.positionMs.toFloat() / state.durationMs).coerceIn(0f, 1f) else 0f

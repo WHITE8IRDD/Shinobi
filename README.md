@@ -25,8 +25,19 @@ Shinobi is built with Kotlin, Jetpack Compose and AndroidX Media3. It is a commu
 - Every skip is announced with a "Skipped · Undo" note, and a segment is only ever skipped once per viewing: Undo really undoes, and sitting inside a skipped segment won't throw you out of it again.
 - Per-category control (Sponsor, self-promotion, interaction reminder, intro, outro, preview, non-music, filler): skip, ask with a one-tap pill, mark on the scrubber, or off.
 
+### Home that mixes Shorts and videos
+- **For you** interleaves Shorts between the long videos instead of pushing them into a shelf of their own; the Shorts shelf returns with one tap in **Settings → Feed → Mix Shorts with videos**. Each mixed card opens the vertical Shorts player at that Short, and paging stops the moment a page brings nothing new, so the feed can never spin loading forever.
+- Recommendations refine themselves from what you actually watch and search for — on the device, with no account. Related videos arriving in the background re-rank what is already on screen instead of triggering another round of requests.
+
+### Shorts, properly full screen
+- The Shorts tab gives the video the whole screen: the floating tab bar and every overlay control fade away while a Short plays and come straight back on a tap. Tap also pauses, double-tap likes, long-press opens the same options sheet as any other video. Prefer the controls to stay put? Turn it off in **Settings → Feed → Auto-hide Shorts controls**.
+
+### English by default, Arabic when you want it
+- The app ships in English and is fully mirrored in Arabic: **Settings → Language → العربية** flips every screen, header, sheet and dialog to right-to-left layout, with the same register and terminology the official YouTube app uses. Layout mirroring is real configuration-level RTL, not per-screen patching, and English stays the default.
+
 ### Thoughtful defaults
-- Material You wallpaper colors, a Shinobi Ember palette, other light/dark themes, reduced-motion support and haptic controls.
+- A one-tap Light/Night switch in every tab header, plus System / Light / Dark and Material You wallpaper colors, a Shinobi Ember palette and other themes in **Settings → Appearance** — all persisted, all cohesive in both modes.
+- Reduced-motion support and haptic controls.
 - No ad SDK, analytics SDK, tracking SDK, paid API keys or proprietary backend. The app talks directly to YouTube's public site endpoints and, when enabled, SponsorBlock.
 
 ## Build it for free
@@ -57,6 +68,9 @@ app/src/main/java/com/shinobi/app/
   Account.kt          optional YouTube account feeds and sync
   SponsorBlock.kt     category preferences and segment lookup
   Screens.kt          Home, Subscriptions, Search and Library
+  Localization.kt     language choice, right-to-left application and text helpers
+  ArabicStrings.kt    the Arabic copy, keyed by the English string it replaces
+  AppSettings.kt      feed behaviour: mixed Shorts, Shorts auto-hide
   Theme.kt / UiKit.kt expressive color, layout and reusable components
 app/src/test/         parser tests against real response fixtures plus caption tests
 ```
