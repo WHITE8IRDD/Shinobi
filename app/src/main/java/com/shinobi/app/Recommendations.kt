@@ -418,7 +418,7 @@ class PersonalizedHomeState(
             ensureActive()
             rank(false) to rank(true)
         }
-        ensureActive()
+        coroutineContext.ensureActive()
         if (!final && ranked.first.isEmpty() && ranked.second.isEmpty()) return
         sources = loaded.map { it.source }
         if (append) {
