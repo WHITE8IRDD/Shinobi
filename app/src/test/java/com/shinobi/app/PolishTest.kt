@@ -32,6 +32,14 @@ class PolishTest {
         assertFalse(SensitivePolicy.shouldCover(1.01f, 1f))
         assertTrue(SensitivePolicy.shouldCover(0.999f, 0.999f))
     }
+    @Test fun storyboardPicksCorrectSheetTileAndClampsEnd() {
+        val board = VideoStoryboard(listOf("https://example.com/0", "https://example.com/1"), 160, 90, 6, 1000, 2, 2)
+        assertEquals(VideoStoryboard.Tile("https://example.com/0", 160, 90), board.tileAt(3_500))
+        assertEquals(VideoStoryboard.Tile("https://example.com/1", 160, 0), board.tileAt(Long.MAX_VALUE))
+        assertEquals(VideoStoryboard.Tile("https://example.com/0", 0, 0), board.tileAt(-1))
+        assertNull(board.copy(intervalMs = 0).tileAt(1))
+        assertNull(board.copy(columns = Int.MAX_VALUE).tileAt(1))
+    }
     @Test fun malformedSponsorRecordsCannotSeek() {
         val body = """[{"videoID":"v","segments":[
           {"UUID":"valid","category":"sponsor","segment":[1,1.5],"actionType":"skip"},

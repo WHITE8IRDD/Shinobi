@@ -48,8 +48,10 @@ subgroup/error analysis and agreed precision/recall criteria before wider defaul
 - Stream extraction cache capped at 48 items; at most four queued prefetch IDs, deduplicated.
 - Existing orientation policy follows system auto-rotate and preserves manual entry while
   rotation lock is on. Fit preserves aspect; Fill crops without stretching.
-- Scrub preview shows time, chapter title and chapter thumbnail when provided; chapters come from the extractor. It does not
-  pretend to be a decoded frame/storyboard preview at every arbitrary timestamp.
+- Scrub preview selects the timestamp's tile from YouTube's published storyboard sheets,
+  decoding only when the sheet URL changes (Coil cache), without seeking the live decoder.
+  Time/chapter labels are always available; a chapter thumbnail is the fallback when there
+  is no storyboard. Preview accuracy depends on YouTube's frame interval and availability.
 - Autoplay chooses a related video after the queue ends while the UI controller is alive.
   User queues, background service playback, captions, quality and PiP are retained.
 - Reports open YouTube's authenticated UI; they are not submitted silently by Shinobi.

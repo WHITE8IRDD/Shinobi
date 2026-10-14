@@ -143,12 +143,14 @@ class PlayerState(private val scope: CoroutineScope) {
         private set
 
     fun open(item: VideoItem, expand: Boolean = true) {
-        if (inShortsMode) {
+        val wasShorts = inShortsMode
+        if (wasShorts) {
+            clearQueue()
             inShortsMode = false
             controller?.repeatMode = Player.REPEAT_MODE_OFF
         }
         if (expand) expanded = true
-        if (current?.id == item.id && error == null) return
+        if (current?.id == item.id && error == null && !wasShorts) return
         known[item.id] = item
         show(item, startPlayback = true)
     }
@@ -156,11 +158,12 @@ class PlayerState(private val scope: CoroutineScope) {
     /** Plays [item] inside the vertical Shorts feed (looping, no mini-player). */
     fun openShort(item: VideoItem) {
         val shortItem = item.copy(isShort = true)
+        val wasShorts = inShortsMode
         inShortsMode = true
         expanded = false
         fullscreen = false
         controller?.repeatMode = Player.REPEAT_MODE_OFF
-        if (current?.id == shortItem.id && error == null) {
+        if (current?.id == shortItem.id && error == null && wasShorts) {
             if (controller?.isPlaying == false) controller?.play()
             return
         }
@@ -171,9 +174,13 @@ class PlayerState(private val scope: CoroutineScope) {
 
     /** Keep just the next Short in the service playlist for bounded Media3 preloading. */
     fun preloadShort(item: VideoItem?) {
-        if (!inShortsMode || item == null) return
+        if (!inShortsMode) return
         val player = controller ?: return
         val next = player.currentMediaItemIndex + 1
+        if (item == null) {
+            if (next < player.mediaItemCount) player.removeMediaItems(next, player.mediaItemCount)
+            return
+        }
         if (next < player.mediaItemCount && player.getMediaItemAt(next).mediaId == item.id) return
         if (next < player.mediaItemCount) player.removeMediaItems(next, player.mediaItemCount)
         known[item.id] = item

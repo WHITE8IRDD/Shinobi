@@ -352,7 +352,9 @@ fun VideoContent(
                     var scrubPreview by remember { mutableStateOf<Long?>(null) }
                     if (scrubPreview != null) {
                         val chapter = state.details?.chapters?.lastOrNull { it.startMs <= scrubPreview!! }
-                        chapter?.thumbnail?.let { url ->
+                        val storyboard = state.details?.storyboard
+                        if (storyboard != null) StoryboardPreview(storyboard, scrubPreview!!)
+                        else chapter?.thumbnail?.let { url ->
                             Thumbnail(url, Modifier.width(112.dp).height(63.dp), radius = 8)
                         }
                         Text(

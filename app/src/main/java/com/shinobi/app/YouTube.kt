@@ -85,6 +85,7 @@ data class VideoDetails(
     /** Available caption tracks, ordered with human-created tracks before auto captions. */
     val captions: List<CaptionTrack> = emptyList(),
     val chapters: List<VideoChapter> = emptyList(),
+    val storyboard: VideoStoryboard? = null,
 )
 
 @Immutable
@@ -199,6 +200,10 @@ object YouTube {
             quality = picked.playedHeight?.let { "${it}p" },
             qualities = StreamSelection.heights(info),
             aspect = aspect,
+            storyboard = info.previewFrames.orEmpty().map { frames ->
+                VideoStoryboard(frames.urls, frames.frameWidth, frames.frameHeight, frames.totalCount,
+                    frames.durationPerFrame, frames.framesPerPageX, frames.framesPerPageY)
+            }.filter { it.tileAt(0) != null }.minByOrNull { kotlin.math.abs(it.width - 160) },
             chapters = info.streamSegments.orEmpty().filter { it.startTimeSeconds >= 0 }
                 .map { VideoChapter(it.title, it.startTimeSeconds * 1000L, it.previewUrl) }
                 .distinctBy { it.startMs }.sortedBy { it.startMs },
