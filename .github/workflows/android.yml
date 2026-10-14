@@ -17,7 +17,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
@@ -26,9 +26,41 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
 
       - name: Run tests and assemble APKs
-        run: ./gradlew testDebugUnitTest assembleDebug assembleRelease --console=plain
+        run: |
+          set -o pipefail
+          ./gradlew testDebugUnitTest assembleDebug assembleRelease --console=plain 2>&1 | tee build.log
+
+      - name: Publish failure log as annotations
+        if: failure()
+        run: |
+          python3 - <<'PY'
+          import os
+          path = "build.log"
+          if not os.path.exists(path):
+              print("::error::Gradle produced no build.log")
+              raise SystemExit(0)
+          with open(path, "rb") as f:
+              data = f.read().decode("utf-8", "replace")
+          lines = data.splitlines()
+          # The interesting part of a Gradle failure is at the end; keep up to ~60KB.
+          tail = "\n".join(lines[-600:])
+          chunks = [tail[i:i + 6000] for i in range(0, len(tail), 6000)][:10]
+          for i, chunk in enumerate(chunks):
+              safe = chunk.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+              print(f"::error title=build log [{i + 1}/{len(chunks)}]::{safe}")
+          PY
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build.log
+          if-no-files-found: ignore
+          retention-days: 14
 
       - name: Upload APKs
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: shinobi-apks
