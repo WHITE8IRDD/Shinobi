@@ -43,8 +43,18 @@ object AppSettings {
             prefs?.edit()?.putBoolean(KEY_SHORTS_AUTOHIDE, value)?.apply()
         }
 
+    var trendingCountry by mutableStateOf("US")
+        private set
+
+    fun chooseTrendingCountry(code: String) {
+        if (code !in java.util.Locale.getISOCountries()) return
+        trendingCountry = code
+        prefs?.edit()?.putString("trending_country", code)?.apply()
+    }
+
     fun init(context: Context) {
         val p = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE).also { prefs = it }
+        trendingCountry = p.getString("trending_country", "US")?.takeIf { it in java.util.Locale.getISOCountries() } ?: "US"
         mixState = p.getBoolean(KEY_MIX_SHORTS, true)
         autoHideState = p.getBoolean(KEY_SHORTS_AUTOHIDE, true)
     }

@@ -30,15 +30,19 @@ Shinobi is built with Kotlin, Jetpack Compose and AndroidX Media3. It is a commu
 - Every skip is announced with a "Skipped · Undo" note, and a segment is only ever skipped once per viewing: Undo really undoes, and sitting inside a skipped segment won't throw you out of it again.
 - Per-category control (Sponsor, self-promotion, interaction reminder, intro, outro, preview, non-music, filler): skip, ask with a one-tap pill, mark on the scrubber, or off.
 
-### Home that mixes Shorts and videos
-- **For you** interleaves Shorts between the long videos instead of pushing them into a shelf of their own; the Shorts shelf returns with one tap in **Settings → Feed → Mix Shorts with videos**. Each mixed card opens the vertical Shorts player at that Short, and paging stops the moment a page brings nothing new, so the feed can never spin loading forever.
-- Recommendations refine themselves from what you actually watch and search for — on the device, with no account. Related videos arriving in the background re-rank what is already on screen instead of triggering another round of requests.
+### Balanced Home, smart search and regional Trending (1.3)
+- **For you** reserves separate budgets for YouTube discovery, diverse watch-history seeds and likes. A personal seed can supply at most six items in a 30-card page; repeated sources do not receive extra weight, and missing personal sources are filled only from discovery. Ranking also penalizes recently repeated creators and title topics. This is an open local ranker, not YouTube's proprietary algorithm.
+- A newly opened video qualifies as a history seed after five seconds of actual playback. Older interests survive a recent-topic binge; like/dislike changes update the feed. Home is available both signed in and signed out. When anonymous Home is empty, a real regional trending chart supplies discovery.
+- **Shorts appear first**, in a shelf above the videos. **Settings → Feed → Mix Shorts with videos** controls additional inline Shorts further down.
+- **Home → Trending** offers a country selector and a genuine public YouTube regional chart. Country selection is persisted; absent charts have an explicit unavailable state rather than invented results.
+- **Search predicts as you type** using YouTube suggestions and prefix-matched local searches. Requests are debounced, cancelled when obsolete and briefly cached. Tap a suggestion to search. Typed fragments are sent to Google's YouTube suggestion endpoint; only submitted searches are added to local history.
+- Feed ranking and parsing run off the UI thread. Lists and caches are bounded, and pagination stops on duplicate pages or repeated tokens instead of spinning forever. These are responsiveness safeguards, not a guarantee of identical performance on every phone or network.
 
 ### Shorts, properly full screen
 - The Shorts tab gives the video the whole screen: the floating tab bar and every overlay control fade away while a Short plays and come straight back on a tap. Tap also pauses, double-tap likes, long-press opens the same options sheet as any other video. Prefer the controls to stay put? Turn it off in **Settings → Feed → Auto-hide Shorts controls**.
 
 ### English by default, Arabic when you want it
-- The app ships in English and is fully mirrored in Arabic: **Settings → Language → العربية** flips every screen, header, sheet and dialog to right-to-left layout, with the same register and terminology the official YouTube app uses. Layout mirroring is real configuration-level RTL, not per-screen patching, and English stays the default.
+- The app ships in English and is fully mirrored in Arabic: **Settings → Language → العربية** flips every screen, header, sheet and dialog to right-to-left layout, with the same register and terminology the official YouTube app uses. Layout mirroring is real configuration-level RTL, not per-screen patching, and English stays the default. Arabic/English video metadata uses independent directional isolates, so a creator name cannot reorder adjacent view counts or dates.
 
 ### Thoughtful defaults
 - A one-tap Light/Night switch in every tab header, plus System / Light / Dark and Material You wallpaper colors, a Shinobi Ember palette and other themes in **Settings → Appearance** — all persisted, all cohesive in both modes.
@@ -75,7 +79,12 @@ app/src/main/java/com/shinobi/app/
   Screens.kt          Home, Subscriptions, Search and Library
   Localization.kt     language choice, right-to-left application and text helpers
   ArabicStrings.kt    the Arabic copy, keyed by the English string it replaces
-  AppSettings.kt      feed behaviour: mixed Shorts, Shorts auto-hide
+  Recommendations.kt  Home request lifecycle and local subscriptions
+  RecommendationMixer.kt  bounded, deterministic discovery/history/like ranking
+  SearchSuggestions.kt debounced, cancellable YouTube autocomplete
+  Trending.kt         regional chart and country selector
+  BidiText.kt         isolated mixed-direction metadata
+  AppSettings.kt      feed behaviour and persisted trending country
   Theme.kt / UiKit.kt expressive color, layout and reusable components
 app/src/test/         parser tests against real response fixtures plus caption tests
 branding/             the mark, and the generator that turns it into every app asset
@@ -115,10 +124,12 @@ turn advertising on, because no such component is linked into the app.
 
 ## Privacy, accounts and service limits
 
-- Search and playback work without sign-in. Recent history and resume positions are stored in app-private preferences; recent history is capped at 100 items and has a clear control.
+- Search and playback work without sign-in. Recent history, bounded playback qualification and resume positions are stored in app-private preferences; recent history is capped at 100 items and has a clear control. Autocomplete sends typed fragments to Google's YouTube suggestion endpoint.
 - Optional account cookies are encrypted with AES-GCM using an Android Keystore key. Sign-in uses Google's own page inside a WebView, but Shinobi is still an unofficial client. Google may restrict accounts used by unofficial clients; **use a secondary account if you choose to sign in**, and leave it disabled if that risk is unacceptable.
 - YouTube changes its site and streaming interfaces without notice. Shinobi can break until its free/open-source extractor is updated. Live streams, members-only streams and DRM-protected content are not supported.
 - Use the app only in ways permitted by applicable law and YouTube's terms. Shinobi is not affiliated with or endorsed by YouTube or Google.
+
+See [SHINOBI 1.3 release notes](docs/releases/v1.3.md) for changes, validation limits and APK upgrade/signing guidance.
 
 ## License and attribution
 

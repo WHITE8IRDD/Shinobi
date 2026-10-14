@@ -94,6 +94,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.ensureActive
 
 // ── Home ───────────────────────────────────────────────────────────────────────
 
@@ -111,74 +112,41 @@ fun HomeScreen(
     scrollToTop: Int = 0,
 ) {
     val signedIn = Account.signedIn
-    // Only the taste key — what was watched or searched — may start a new recommendation
-    // load. Related videos arriving used to change the old signature and made Home reload
-    // its suggestions over and over (product owner's glitch, 2026-10-14).
     val tasteKey = LocalHistory.tasteKey
-    val hasTaste = LocalHistory.hasTasteSignal
-
-    LaunchedEffect(signedIn) {
-        if (signedIn) lib.home.ensureLoaded()
+    var showTrending by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val trending = remember { TrendingState(scope) }
+    LaunchedEffect(tasteKey, signedIn, Loc.language) {
+        delay(300)
+        personalized.syncWithTaste("$signedIn|${Loc.language}|$tasteKey")
     }
-    LaunchedEffect(tasteKey) {
-        // A short debounce so returning from the player triggers one refinement, not a burst.
-        if (tasteKey.isNotEmpty()) delay(300)
-        personalized.syncWithTaste(tasteKey)
-    }
-
     CollapsingHeaderLayout(
-        // Only the user's own refresh resets the header; a background load must not yank it.
-        resetKey = scrollToTop to (if (signedIn) lib.home.generation else personalized.refreshToken),
+        resetKey = Triple(scrollToTop, personalized.refreshToken, showTrending),
         header = {
-            ScreenHeader(title = "Shinobi", brandMark = true) {
-                CircleAction(Icons.Rounded.Search, Loc.t("Search"), onSearch)
-                ThemeToggleAction()
-                AccountAction(onAccount)
+            Column {
+                ScreenHeader(title = "Shinobi", brandMark = true,
+                    leadingActions = { CircleAction(Icons.Rounded.Search, Loc.t("Search"), onSearch) },
+                ) {
+                    ThemeToggleAction()
+                    AccountAction(onAccount)
+                }
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    androidx.compose.material3.FilterChip(selected = !showTrending, onClick = { showTrending = false }, label = { Text(Loc.t("For you")) })
+                    androidx.compose.material3.FilterChip(selected = showTrending, onClick = { showTrending = true }, label = { Text(Loc.t("Trending")) })
+                }
             }
         },
     ) { top ->
-        when {
-            signedIn -> {
-                FeedList(
-                    feed = lib.home,
-                    contentPadding = contentPadding.withTop(top),
-                    onOpen = onOpen,
-                    header = {
-                        if (personalized.shorts.isNotEmpty()) {
-                            item(key = "home-shorts-shelf") {
-                                ShortsShelf(
-                                    shorts = personalized.shorts,
-                                    onOpenShort = onOpenShort,
-                                    onViewAll = onOpenShortsTab,
-                                )
-                            }
-                        }
-                    },
-                    scrollToTop = scrollToTop,
-                    indicatorTop = top,
-                )
-            }
-            hasTaste -> {
-                PersonalizedHomeContent(
-                    state = personalized,
-                    contentPadding = contentPadding.withTop(top),
-                    indicatorTop = top,
-                    scrollToTop = scrollToTop,
-                    onOpen = onOpen,
-                    onOpenShort = onOpenShort,
-                    onOpenShortsTab = onOpenShortsTab,
-                )
-            }
-            else -> {
-                FirstTimeHomeWelcome(
-                    contentPadding = contentPadding.withTop(top),
-                    onSearch = onSearch,
-                    onOpenShortsTab = onOpenShortsTab,
-                    onSignIn = onSignIn,
-                    onPickTopic = { topic -> LocalHistory.recordSearch(topic) },
-                )
-            }
-        }
+        if (showTrending) TrendingContent(trending, contentPadding.withTop(top), top, onOpen)
+        else PersonalizedHomeContent(
+            state = personalized,
+            contentPadding = contentPadding.withTop(top),
+            indicatorTop = top,
+            scrollToTop = scrollToTop,
+            onOpen = onOpen,
+            onOpenShort = onOpenShort,
+            onOpenShortsTab = onOpenShortsTab,
+        )
     }
 }
 
@@ -239,7 +207,7 @@ private fun PersonalizedHomeContent(
 
     val mix = AppSettings.mixShortsInFeed
     val entries = remember(state.videos, state.shorts, mix) {
-        buildForYouFeed(state.videos, state.shorts, mix)
+        buildForYouFeed(state.videos, state.shorts.drop(12), mix)
     }
     val shortsShelf = remember(state.shorts) { state.shorts.distinctBy { it.id }.take(20) }
 
@@ -250,6 +218,11 @@ private fun PersonalizedHomeContent(
         topPadding = indicatorTop,
     ) {
         LazyColumn(state = list, contentPadding = contentPadding) {
+            if (shortsShelf.isNotEmpty()) {
+                item(key = "home-shorts-top", contentType = "shorts-shelf") {
+                    ShortsShelf(shortsShelf.take(12), onOpenShort = onOpenShort, onViewAll = onOpenShortsTab)
+                }
+            }
             // Taste filter chips bar
             item(key = "taste-chips") {
                 HomeTasteFilterRow(
@@ -274,7 +247,7 @@ private fun PersonalizedHomeContent(
                 } else if (state.loading) {
                     // The first load draws its own shape straight away instead of an empty page.
                     item(key = "home-skeleton") { ListSkeleton() }
-                } else if (!state.loading) {
+                } else if (!state.loading && shortsShelf.isEmpty()) {
                     item(key = "home-empty") {
                         EmptyState(
                             icon = Icons.Rounded.AutoAwesome,
@@ -285,7 +258,7 @@ private fun PersonalizedHomeContent(
                     }
                 }
             } else {
-                items(entries, key = { it.key }) { entry ->
+                items(entries, key = { it.key }, contentType = { if (it is ForYouEntry.Long) "video" else "short" }) { entry ->
                     when (entry) {
                         is ForYouEntry.Long -> VideoCard(entry.video, onClick = { onOpen(entry.video) })
                         is ForYouEntry.Short -> ShortFeedCard(
@@ -294,20 +267,11 @@ private fun PersonalizedHomeContent(
                         )
                     }
                 }
-                // A separate shelf only when Shorts are *not* already mixed into the list.
-                if (!mix && shortsShelf.size > 3) {
-                    item(key = "shorts-shelf-more") {
-                        ShortsShelf(
-                            shorts = shortsShelf.drop(3).take(12),
-                            title = Loc.t("More Shorts for you"),
-                            onOpenShort = onOpenShort,
-                            onViewAll = onOpenShortsTab,
-                        )
-                    }
-                }
                 // The footer *is* the pagination trigger: it only asks for the next page while
                 // it is on screen, and stops for good once a page brings nothing new.
-                if (state.hasMore) {
+                if (state.error != null) {
+                    item(key = "home-page-error") { PillButton(Loc.t("Try again"), state::refresh, modifier = Modifier.padding(16.dp)) }
+                } else if (state.hasMore) {
                     item(key = "home-more") {
                         LaunchedEffect(state.videos.size, state.shorts.size) {
                             if (!state.loading && state.hasMore) state.loadMore()
@@ -375,6 +339,7 @@ private fun ShortFeedCard(short: VideoItem, onClick: () -> Unit) {
             Column(Modifier.weight(1f)) {
                 Text(
                     short.title,
+                    style = TextStyle(textDirection = androidx.compose.ui.text.style.TextDirection.Content),
                     fontWeight = FontWeight.Bold,
                     fontSize = 16.sp,
                     lineHeight = 20.sp,
@@ -383,10 +348,7 @@ private fun ShortFeedCard(short: VideoItem, onClick: () -> Unit) {
                 )
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    listOfNotNull(
-                        short.channel.takeIf { it.isNotBlank() },
-                        short.views.takeIf { it > 0 }?.let { Loc.views(it) },
-                    ).joinToString(" · "),
+                    metaLine(short.channel, short.views, null),
                     color = c.onSurfaceVariant,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold,
@@ -1194,7 +1156,7 @@ private fun HistoryCard(video: VideoItem, onClick: () -> Unit) {
             ResumeBar(video.id, Modifier.align(Alignment.BottomStart))
         }
         Spacer(Modifier.height(7.dp))
-        Text(video.title, fontSize = 13.sp, fontWeight = FontWeight.Bold, lineHeight = 16.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        Text(video.title, style = TextStyle(textDirection = androidx.compose.ui.text.style.TextDirection.Content), fontSize = 13.sp, fontWeight = FontWeight.Bold, lineHeight = 16.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -1307,6 +1269,9 @@ private fun TextLink(text: String, onClick: () -> Unit) {
 /** Lives above the tab switcher so results survive switching tabs. */
 @Stable
 class SearchState(private val scope: CoroutineScope) {
+    val suggestions = SearchSuggestions(scope)
+    fun updateQuery(value: String) { query = value; suggestions.update(value, Loc.language) }
+
     var query by mutableStateOf("")
     var submitted by mutableStateOf("")
         private set
@@ -1327,30 +1292,26 @@ class SearchState(private val scope: CoroutineScope) {
         if (q.isEmpty()) return
         query = q
         submitted = q
+        suggestions.dismiss()
         LocalHistory.recordSearch(q)
         loading = true
         error = null
         job?.cancel()
         job = scope.launch {
             runCatching {
-                coroutineScope {
-                    val innerDeferred = async(Dispatchers.IO) {
-                        runCatching { InnerTube.searchPage(q) }.getOrNull()
-                    }
-                    val npDeferred = async(Dispatchers.IO) {
-                        runCatching { YouTube.search(q) }.getOrNull()
-                    }
-                    val inner = innerDeferred.await()
-                    val np = if (inner == null || inner.videos.isEmpty()) npDeferred.await() else null
-                    val vids = inner?.videos?.ifEmpty { np.orEmpty() } ?: np ?: throw java.io.IOException(Loc.t("Search failed"))
-                    val sh = inner?.shorts.orEmpty() + vids.filter { it.isShort }
-                    vids.filterNot { it.isShort } to sh.distinctBy { it.id }
-                }
+                val inner = try { InnerTube.searchPage(q) }
+                    catch (e: kotlinx.coroutines.CancellationException) { throw e }
+                    catch (_: Exception) { null }
+                val vids = if (inner == null || (inner.videos.isEmpty() && inner.shorts.isEmpty())) YouTube.search(q) else inner.videos
+                val sh = inner?.shorts.orEmpty() + vids.filter { it.isShort }
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                vids.filterNot { it.isShort }.distinctBy { it.id } to sh.distinctBy { it.id }
             }.onSuccess { (vids, sh) ->
                 results = vids
                 shorts = sh
                 generation++
             }.onFailure {
+                if (it is kotlinx.coroutines.CancellationException) throw it
                 error = YouTube.friendlyError(it)
             }
             loading = false
@@ -1371,6 +1332,8 @@ fun SearchScreen(
     val keyboard = LocalSoftwareKeyboardController.current
     val focus = LocalFocusManager.current
     val view = LocalView.current
+    androidx.compose.runtime.DisposableEffect(state) { onDispose { state.suggestions.dismiss() } }
+    androidx.activity.compose.BackHandler(enabled = state.suggestions.visible) { state.suggestions.dismiss() }
 
     fun submit(overrideQuery: String? = null) {
         focus.clearFocus(force = true)
@@ -1406,9 +1369,9 @@ fun SearchScreen(
                         }
                         BasicTextField(
                             value = state.query,
-                            onValueChange = { state.query = it },
+                            onValueChange = state::updateQuery,
                             singleLine = true,
-                            textStyle = TextStyle(color = c.onSurface, fontSize = 16.sp, fontWeight = FontWeight.SemiBold),
+                            textStyle = TextStyle(color = c.onSurface, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, textDirection = androidx.compose.ui.text.style.TextDirection.Content),
                             cursorBrush = SolidColor(c.primary),
                             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                             keyboardActions = KeyboardActions(onSearch = { submit() }, onDone = { submit() }),
@@ -1422,19 +1385,32 @@ fun SearchScreen(
                     }
                     if (state.query.isNotEmpty()) {
                         Box(
-                            modifier = Modifier.size(44.dp).pressable { state.query = "" },
+                            modifier = Modifier.size(44.dp).pressable { state.updateQuery("") },
                             contentAlignment = Alignment.Center,
                         ) { Icon(Icons.Rounded.Close, Loc.t("Clear"), tint = c.onSurfaceVariant) }
                     }
                 }
+                if (state.loading) androidx.compose.material3.LinearProgressIndicator(modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp))
                 Spacer(Modifier.height(8.dp))
             }
         },
     ) { top ->
         Box(Modifier.fillMaxSize()) {
-            val hasResults = (state.results.isNotEmpty() || state.shorts.isNotEmpty()) && state.error == null
+            val hasResults = (state.suggestions.visible && state.suggestions.items.isNotEmpty()) || (state.results.isNotEmpty() || state.shorts.isNotEmpty()) && state.error == null
             Box(Modifier.padding(top = if (hasResults || state.submitted.isEmpty()) 0.dp else top)) {
                 when {
+                    state.suggestions.visible && state.suggestions.items.isNotEmpty() -> {
+                        LazyColumn(contentPadding = contentPadding.withTop(top)) {
+                            items(state.suggestions.items, key = { it }, contentType = { "suggestion" }) { suggestion ->
+                                Row(Modifier.fillMaxWidth().pressable { submit(suggestion) }.padding(horizontal = 20.dp, vertical = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Rounded.Search, null, tint = c.onSurfaceVariant)
+                                    Spacer(Modifier.width(16.dp))
+                                    Text(suggestion, modifier = Modifier.weight(1f), maxLines = 2,
+                                        style = MaterialTheme.typography.bodyLarge.copy(textDirection = androidx.compose.ui.text.style.TextDirection.Content))
+                                }
+                            }
+                        }
+                    }
                     state.loading && state.results.isEmpty() && state.shorts.isEmpty() -> Box(
                         Modifier.fillMaxWidth().padding(top = top + 48.dp),
                         Alignment.Center,
@@ -1510,7 +1486,7 @@ fun SearchScreen(
                                     )
                                 }
                             }
-                            items(state.results, key = { it.id }) { video ->
+                            items(state.results, key = { it.id }, contentType = { "video" }) { video ->
                                 VideoCard(video, onClick = { onOpen(video) })
                             }
                         }

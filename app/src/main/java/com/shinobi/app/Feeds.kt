@@ -29,6 +29,9 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.currentCoroutineContext
 
 /** A pageable list of videos from the signed-in account (home, subscriptions, history, a playlist). */
 @Stable
@@ -74,11 +77,12 @@ class FeedState(
         job = scope.launch {
             runCatching { if (freshOnRefresh && shown.isNotEmpty()) loadFresh() else loader(null) }
                 .onSuccess {
-                    videos = it.videos; next = it.next; generation++
-                    if (freshOnRefresh) it.videos.forEach { v -> shown += v.id }
+                    currentCoroutineContext().ensureActive()
+                    videos = it.videos.distinctBy { v -> v.id }; next = it.next; generation++
+                    if (freshOnRefresh) { if (shown.size > 600) shown.clear(); it.videos.forEach { v -> shown += v.id } }
                     it.videos.take(prefetchTop).forEach { v -> StreamCache.prefetch(v.id) }
                 }
-                .onFailure { error = friendly(it) }
+                .onFailure { if (it is CancellationException) throw it; error = friendly(it) }
             loading = false
             refreshing = false
         }
@@ -86,18 +90,19 @@ class FeedState(
 
     fun loadMore() {
         val token = next ?: return
-        if (loading) return
+        if (loading || videos.size >= 300 || error != null) return
         loading = true
         job = scope.launch {
             runCatching { loader(token) }
                 .onSuccess { page ->
+                    currentCoroutineContext().ensureActive()
                     val seen = videos.mapTo(HashSet()) { it.id }
                     val added = page.videos.filter { seen.add(it.id) }
-                    videos = videos + added
+                    videos = (videos + added).take(300)
                     if (freshOnRefresh) added.forEach { v -> shown += v.id }
-                    next = page.next
+                    next = page.next?.takeUnless { it == token || added.isEmpty() || videos.size >= 300 }
                 }
-                .onFailure { error = friendly(it) }
+                .onFailure { if (it is CancellationException) throw it; error = friendly(it) }
             loading = false
         }
     }
@@ -125,7 +130,7 @@ class FeedState(
     fun reset() {
         job?.cancel()
         shown.clear()
-        videos = emptyList(); next = null; loaded = false; loading = false; error = null
+        videos = emptyList(); next = null; loaded = false; loading = false; refreshing = false; error = null
     }
 
     private companion object {
@@ -201,7 +206,7 @@ fun FeedList(
     PullToRefresh(enabled = pullToRefresh, refreshing = feed.refreshing, onRefresh = feed::refresh, topPadding = indicatorTop) {
     LazyColumn(state = list, contentPadding = contentPadding) {
         header()
-        items(feed.videos, key = { it.id }) { video -> VideoCard(video, onClick = { onOpen(video) }) }
+        items(feed.videos, key = { it.id }, contentType = { "video" }) { video -> VideoCard(video, onClick = { onOpen(video) }) }
         when {
             // No keys on these trailing items: a keyed loader at index 0 makes LazyColumn
             // hold it in view when videos arrive above it, landing at the bottom of the page.
@@ -212,6 +217,9 @@ fun FeedList(
                     body = feed.error.orEmpty(),
                     action = { PillButton(Loc.t("Try again"), { feed.refresh() }) },
                 )
+            }
+            feed.error != null -> item {
+                PillButton(Loc.t("Try again"), feed::refresh, modifier = Modifier.padding(16.dp))
             }
             feed.loading || feed.hasMore -> item {
                 Box(Modifier.fillMaxWidth().padding(28.dp), Alignment.Center) {

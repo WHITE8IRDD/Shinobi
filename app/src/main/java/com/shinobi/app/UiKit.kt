@@ -101,8 +101,18 @@ val SunnyShape = LobedShape(lobes = 8, depth = 0.05f)
 fun ScreenHeader(
     title: String,
     brandMark: Boolean = false,
+    leadingActions: @Composable () -> Unit = {},
     actions: @Composable () -> Unit = {},
 ) {
+    if (brandMark) {
+        // Center against the full header bounds, never against leftover row space.
+        Box(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 16.dp, vertical = 12.dp).height(44.dp)) {
+            Box(Modifier.align(Alignment.Center)) { BrandMark() }
+            Row(Modifier.align(Alignment.CenterStart), horizontalArrangement = Arrangement.spacedBy(10.dp)) { leadingActions() }
+            Row(Modifier.align(Alignment.CenterEnd), horizontalArrangement = Arrangement.spacedBy(10.dp)) { actions() }
+        }
+        return
+    }
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -150,7 +160,7 @@ fun BrandTile(size: Dp = 38.dp) {
     ) {
         Icon(
             painterResource(R.drawable.ic_shinobi_mark),
-            contentDescription = null,
+            contentDescription = "Shinobi",
             tint = c.onPrimary,
             modifier = Modifier.size(size * 0.70f),
         )
@@ -358,6 +368,7 @@ fun VideoCard(video: VideoItem, onClick: () -> Unit, modifier: Modifier = Modifi
             Column(Modifier.weight(1f)) {
                 Text(
                     video.title,
+                    style = androidx.compose.ui.text.TextStyle(textDirection = androidx.compose.ui.text.style.TextDirection.Content),
                     fontWeight = FontWeight.Bold,
                     fontSize = 16.sp,
                     lineHeight = 20.sp,
@@ -397,10 +408,10 @@ fun VideoRow(video: VideoItem, onClick: () -> Unit, trailing: (@Composable () ->
         }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
-            Text(video.title, fontWeight = FontWeight.Bold, fontSize = 14.sp, lineHeight = 18.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(video.title, style = androidx.compose.ui.text.TextStyle(textDirection = androidx.compose.ui.text.style.TextDirection.Content), fontWeight = FontWeight.Bold, fontSize = 14.sp, lineHeight = 18.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Spacer(Modifier.height(4.dp))
             Text(
-                listOfNotNull(video.channel.ifBlank { null }, video.views.takeIf { it >= 0 }?.let { Loc.views(it) }).joinToString(" · "),
+                metaLine(video.channel, video.views, null),
                 color = c.onSurfaceVariant,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.SemiBold,
@@ -580,7 +591,7 @@ fun formatDuration(ms: Long): String {
     val h = total / 3600
     val m = (total % 3600) / 60
     val s = total % 60
-    return if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%d:%02d".format(m, s)
+    return if (h > 0) String.format(java.util.Locale.US, "%d:%02d:%02d", h, m, s) else String.format(java.util.Locale.US, "%d:%02d", m, s)
 }
 
 fun formatCount(n: Long): String = when {
@@ -594,8 +605,8 @@ private fun trimmed(v: Double): String =
     if (v >= 100 || v == Math.floor(v)) v.toLong().toString() else "%.1f".format(v).removeSuffix(".0")
 
 fun metaLine(channel: String, views: Long, uploaded: String?): String =
-    listOfNotNull(
+    BidiText.join(listOfNotNull(
         channel.ifBlank { null },
         views.takeIf { it >= 0 }?.let { Loc.views(it) },
         uploaded?.ifBlank { null },
-    ).joinToString(" · ")
+    ), rtl = Loc.isRtl)
