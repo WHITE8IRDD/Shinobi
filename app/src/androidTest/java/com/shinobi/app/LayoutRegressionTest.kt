@@ -39,8 +39,12 @@ class LayoutRegressionTest {
         val layouts = mutableListOf<TextLayoutResult>()
         compose.onNodeWithText(text).assertIsDisplayed().performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
         assertTrue(layouts.isNotEmpty())
-        assertFalse("Clipped: $text", layouts.first().hasVisualOverflow)
-        if (oneLine) assertEquals(1, layouts.first().lineCount)
+        val first = layouts.first()
+        val diag = "text='$text' size=${first.size} lines=${first.lineCount} " +
+            "overflowW=${first.didOverflowWidth} overflowH=${first.didOverflowHeight} " +
+            "rights=" + (0 until first.lineCount).joinToString(",") { first.getLineRight(it).toString() }
+        assertFalse("Clipped: $diag", first.hasVisualOverflow)
+        if (oneLine) assertEquals("Multi-line: $diag", 1, first.lineCount)
     }
 
     @Test fun oneScrollableChipRowWithNoDuplicateForYouOrClippedMixLabel() {
