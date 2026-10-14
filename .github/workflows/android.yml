@@ -125,9 +125,14 @@ jobs:
           set -o pipefail
           {
             set -euo pipefail
-            # "draft-1" becomes "Draft 1" when no nicer name was given.
+            # "draft-1" becomes "Draft 1"; a version tag names the product and its version,
+            # so v1.0 publishes as "SHINOBI 1.0" with Shinobi-1.0-*.apk beside it.
             if [[ -z "$NAME" ]]; then
-              NAME=$(echo "$TAG" | tr '-' ' ' | awk '{for(i=1;i<=NF;i++){$i=toupper(substr($i,1,1)) substr($i,2)}}1')
+              if [[ "$TAG" =~ ^[vV][0-9] ]]; then
+                NAME="SHINOBI ${TAG#[vV]}"
+              else
+                NAME=$(echo "$TAG" | tr '-' ' ' | awk '{for(i=1;i<=NF;i++){$i=toupper(substr($i,1,1)) substr($i,2)}}1')
+              fi
             fi
             SLUG="${NAME// /-}"
             # "SHINOBI 1.0" names the release, not the product twice: the APKs become
