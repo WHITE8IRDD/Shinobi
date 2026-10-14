@@ -388,20 +388,38 @@ private class SpeedKeeper(private val player: ExoPlayer) : Player.Listener {
 }
 
 /**
- * Schedules SponsorBlock auto-skips for each video as it becomes current. Runs in the
- * service, so skips happen in background and audio-only playback too.
+ * SponsorBlock auto-skipping for the open video. Runs in the service, so skips happen in
+ * background and audio-only playback too, and keeps three complementary triggers:
  *
- * Each auto-skip segment gets a PlayerMessage at its start (delivered once, so seeking
- * back into a segment plays it — the user's choice wins). On delivery the audio fades out
- * (300 ms), the player jumps to the segment end, and fades back in (450 ms): never a hard cut.
+ *  - a PlayerMessage at each auto segment's start, so a natural play-through is cut at the
+ *    exact frame;
+ *  - a light position watch that catches every other way into a segment: a scrub, resuming
+ *    inside one, segments that arrive from the network after playback has already passed
+ *    their start, and queue edits that shift timelines out from under the messages;
+ *  - [SponsorBlock.isSpent], so a segment auto-skips at most once per viewing: Undo really
+ *    undoes, and the user can sit and watch a skipped segment without being thrown out of it.
+ *
+ * The skip itself jumps straight to the end of the whole abutting run of auto segments (see
+ * [SponsorBlock.skipSpanEnd]) — no fade-out first, so none of the segment is ever shown — and
+ * the audio comes back up over 250 ms, so the cut is heard as a soft dip, never a click.
  */
 @OptIn(UnstableApi::class)
 private class SponsorSkipper(private val player: ExoPlayer) : Player.Listener {
     private val main = Handler(Looper.getMainLooper())
     private val io = Executors.newSingleThreadExecutor()
 
+    /** Where playback was on the previous watch tick; TIME_UNSET when it just (re)started. */
+    private var lastPositionMs = C.TIME_UNSET
+    private var watching = false
+    /** Only the newest volume ramp may write to the player, so two skips can't fight. */
+    private var rampGeneration = 0
+
     override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
         val id = mediaItem?.mediaId?.takeIf { it.isNotBlank() } ?: return
+        // A new video is a new viewing: every segment may auto-skip once again.
+        SponsorBlock.resetSpent()
+        lastPositionMs = C.TIME_UNSET
+        startWatching(WATCH_INTERVAL_MS)
         io.execute {
             val segments = SponsorBlock.fetch(id)
             main.post {
@@ -409,39 +427,93 @@ private class SponsorSkipper(private val player: ExoPlayer) : Player.Listener {
                 // Still the same item? (The user may have moved on during the lookup.)
                 if (player.currentMediaItem?.mediaId != id) return@post
                 val index = player.currentMediaItemIndex
-                segments.forEach { segment ->
+                segments.filter { it.action == SponsorBlock.Action.Auto }.forEach { segment ->
                     player.createMessage { _, _ -> skip(id, segment) }
                         .setLooper(Looper.getMainLooper())
                         .setPosition(index, segment.startMs)
                         .send()
                 }
+                // Segments may have arrived while playback already sat inside one (a resume,
+                // or a lookup that took a while): the watch must look at them right away.
+                lastPositionMs = C.TIME_UNSET
             }
         }
     }
 
+    private fun startWatching(delayMs: Long) {
+        if (watching) return
+        watching = true
+        main.postDelayed(watch, delayMs)
+    }
+
+    private val watch = object : Runnable {
+        override fun run() {
+            watching = false
+            // No item open (player idle, playback stopped): stop ticking until the next one.
+            val id = player.currentMediaItem?.mediaId?.takeIf { it.isNotBlank() } ?: return
+            val playing = player.isPlaying
+            // While paused the watch only has to notice playback starting again, so it is slow.
+            startWatching(if (playing) WATCH_INTERVAL_MS else PAUSED_INTERVAL_MS)
+            if (!playing) {
+                lastPositionMs = C.TIME_UNSET
+                return
+            }
+            val position = player.currentPosition
+            val segments = SponsorBlock.cached(id)
+            val entered = segments?.firstOrNull { segment ->
+                segment.action == SponsorBlock.Action.Auto && !SponsorBlock.isSpent(segment) &&
+                    segment.contains(position) &&
+                    (lastPositionMs == C.TIME_UNSET || lastPositionMs < segment.startMs ||
+                        segment.contains(lastPositionMs))
+            }
+            if (entered != null) skip(id, entered) else lastPositionMs = position
+        }
+    }
+
+    /** Blocking-free: everything here already runs on the main thread. */
     private fun skip(videoId: String, segment: SponsorBlock.Segment) {
         // Settings are read at the moment of the skip, so changing them applies immediately.
         if (!SponsorBlock.enabled || segment.action != SponsorBlock.Action.Auto) return
+        if (SponsorBlock.isSpent(segment)) return
         if (player.currentMediaItem?.mediaId != videoId) return
-        if (player.currentPosition > segment.endMs - 500) return
-        Log.i("Shinobi", "SponsorBlock: skipping ${segment.category.key} ${segment.startMs}-${segment.endMs} in $videoId")
-        ramp(from = 1f, to = 0f, durationMs = 300) {
-            player.seekTo(segment.endMs)
-            SponsorBlock.lastSkip = SponsorBlock.Skip(videoId, segment)
-            ramp(from = 0f, to = 1f, durationMs = 450) {}
-        }
+        val position = player.currentPosition
+        if (position >= segment.endMs - 500) { lastPositionMs = position; return }
+        val segments = SponsorBlock.cached(videoId)?.takeIf { it.isNotEmpty() } ?: listOf(segment)
+        val spanEnd = SponsorBlock.skipSpanEnd(segments, segment)
+        // Everything the jump passes over is spent: it must not pull the player back in.
+        SponsorBlock.segmentsWithin(segments, segment, spanEnd).forEach { SponsorBlock.markSpent(it) }
+        SponsorBlock.markSpent(segment)
+        Log.i("Shinobi", "SponsorBlock: skipping ${segment.category.key} ${segment.startMs}-$spanEnd in $videoId")
+        // Jump first, fade in after: the segment is gone from the very first frame it is
+        // detected in, and the audio dip hides the seam.
+        player.volume = 0f
+        player.seekTo(spanEnd)
+        SponsorBlock.lastSkip = SponsorBlock.Skip(videoId, segment.copy(endMs = spanEnd))
+        lastPositionMs = spanEnd
+        ramp(to = 1f, durationMs = 250)
     }
 
-    private fun ramp(from: Float, to: Float, durationMs: Long, then: () -> Unit) {
+    /** Fades the player's volume to [to] from wherever it is now. */
+    private fun ramp(to: Float, durationMs: Long) {
+        val generation = ++rampGeneration
+        val from = player.volume
         val start = android.os.SystemClock.uptimeMillis()
         val step = object : Runnable {
             override fun run() {
+                if (generation != rampGeneration) return // a newer ramp has taken over
                 val t = ((android.os.SystemClock.uptimeMillis() - start).toFloat() / durationMs).coerceIn(0f, 1f)
                 player.volume = from + (to - from) * t
-                if (t < 1f) main.postDelayed(this, 16) else then()
+                if (t < 1f) main.postDelayed(this, 16) else player.volume = to
             }
         }
         main.post(step)
+    }
+
+    private companion object {
+        /** While playback runs: fine enough that a skip is never more than a couple of frames late. */
+        const val WATCH_INTERVAL_MS = 100L
+        /** While paused: cheap, but still quick to pick playback back up. */
+        const val PAUSED_INTERVAL_MS = 400L
     }
 }
 

@@ -25,6 +25,31 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
+      - name: Zero-ads and branding guard
+        run: |
+          # The pattern literals are split so this script cannot match itself.
+          OLD_BRAND="ski""pii"
+          if grep -rniI "$OLD_BRAND" --exclude-dir=.git . ; then
+            echo "::error::A removed brand name reappeared in the repository."
+            exit 1
+          fi
+          AD_SDKS="admob|applovin|ironsource|mopub|chartboost|vungle|startapp|inmobi|play-services-ads|facebook-android-sdk|unity3d.ads|com.google.ads|ads-identifier|crashlytics|firebase-analytics|mixpanel|amplitude|com.segment.analytics"
+          if grep -rniE "$AD_SDKS" build.gradle.kts settings.gradle.kts gradle.properties app/build.gradle.kts app/src/main/AndroidManifest.xml ; then
+            echo "::error::An advertising or tracking SDK reference appeared in the build configuration."
+            exit 1
+          fi
+          echo "No advertising, tracking or removed-brand references found."
+
+      - name: Zero-ads dependency guard
+        run: |
+          ./gradlew :app:dependencies --configuration releaseRuntimeClasspath --console=plain > deps.txt
+          AD_SDKS="admob|applovin|ironsource|mopub|chartboost|vungle|startapp|inmobi|play-services-ads|facebook-android-sdk|unity3d.ads|ads-identifier|crashlytics|firebase|mixpanel|amplitude|com.segment.analytics"
+          if grep -iE "$AD_SDKS" deps.txt ; then
+            echo "::error::An advertising or tracking SDK is on the release runtime classpath."
+            exit 1
+          fi
+          echo "Release runtime classpath is free of advertising and tracking SDKs."
+
       - name: Unit tests
         run: |
           set -o pipefail

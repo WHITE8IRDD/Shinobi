@@ -2,12 +2,13 @@
 
 ## Project provenance
 
-Shinobi is a modified derivative of **Skipii 0.5.20** by Decio Crytek, sourced from commit
-`58d69b4f96563afc2d071c1ac31b3777831ca221` of <https://github.com/deciocrytek/Skipii>.
-Skipii is licensed under GNU GPL version 3. Shinobi retains that license and preserves the
-upstream attribution; this derivative has been rebranded, reorganized and extended with a
-Shinobi theme, on-device signed-out history, caption selection/parsing, tests and project docs.
-The upstream repository's GPL text is included as `LICENSE`.
+Shinobi is a modified fork of an earlier free-software YouTube client (version 0.5.20) written
+by Decio Crytek and released under the GNU GPL version 3, taken from commit
+`58d69b4f96563afc2d071c1ac31b3777831ca221`. The original author's attribution and the GPL
+license are preserved; only the fork's own name and visual identity are new. This derivative
+has been reorganized and extended with a Shinobi theme, on-device signed-out history, caption
+selection/parsing, SponsorBlock ad skipping, tests and project documentation. The upstream GPL
+text is included as `LICENSE`.
 
 ## Bundled or referenced open-source projects
 

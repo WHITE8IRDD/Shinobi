@@ -9,10 +9,12 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
+import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONArray
 import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.TimeUnit
 
 /**
  * SponsorBlock (sponsor.ajay.app). Segment data is CC BY-NC-SA 4.0: credited in the
@@ -50,6 +52,8 @@ object SponsorBlock {
     data class Segment(val uuid: String, val category: Category, val startMs: Long, val endMs: Long) {
         val action get() = actionFor(category)
         val lengthMs get() = endMs - startMs
+        fun contains(positionMs: Long, marginMs: Long = 500): Boolean =
+            positionMs >= startMs && positionMs < endMs - marginMs
     }
 
     /** The last automatic skip, for the "Skipped · Undo" note. Set on the main thread. */
@@ -91,17 +95,73 @@ object SponsorBlock {
     val forUi = mutableStateMapOf<String, List<Segment>>()
     var lastSkip by mutableStateOf<Skip?>(null)
 
+    /**
+     * Segments the player has already skipped (or the user has undone) for the video that is
+     * open now. A skip happens at most once per segment per viewing: that is what makes Undo
+     * stick — after it, the segment plays through instead of being skipped again — and what
+     * keeps a brief re-entry from bouncing the user out twice. Cleared when the video changes.
+     */
+    private val spent = ConcurrentHashMap.newKeySet<String>()
+
+    fun isSpent(segment: Segment): Boolean = segment.uuid in spent
+    fun markSpent(segment: Segment) { spent.add(segment.uuid) }
+    /** A new video is a new viewing: every segment may skip once again. */
+    fun resetSpent() { spent.clear() }
+
     fun cached(videoId: String): List<Segment>? = cache[videoId]
+
+    /**
+     * A small public community service: don't let it hold a socket for as long as a video
+     * download, and give a flaky request one more chance rather than cost the video its skips.
+     */
+    private val api: OkHttpClient by lazy {
+        Net.client.newBuilder()
+            .connectTimeout(4, TimeUnit.SECONDS)
+            .readTimeout(8, TimeUnit.SECONDS)
+            .callTimeout(12, TimeUnit.SECONDS)
+            .build()
+    }
 
     /** Blocking; call off the main thread. Never throws — no segments is a valid answer. */
     fun fetch(videoId: String): List<Segment> {
         cache[videoId]?.let { return it }
-        val segments = runCatching { request(videoId) }
-            .onFailure { Log.w("Shinobi", "SponsorBlock lookup failed for $videoId", it) }
-            .getOrNull() ?: return emptyList() // not cached: a later open retries
-        cache[videoId] = segments
-        return segments
+        repeat(2) { attempt ->
+            val segments = runCatching { request(videoId) }
+                .onFailure { Log.w("Shinobi", "SponsorBlock lookup failed for $videoId (attempt ${attempt + 1})", it) }
+                .getOrNull()
+            if (segments != null) {
+                cache[videoId] = segments
+                return segments
+            }
+            if (attempt == 0) runCatching { Thread.sleep(300) } // transient: one quick retry
+        }
+        return emptyList() // not cached: a later open retries
     }
+
+    /**
+     * Where an auto-skip that starts at [segment] should land: the end of that segment plus any
+     * other auto segments that touch or overlap it (chained to a close gap). Sponsor reads are
+     * routinely submitted as several abutting segments, and jumping once past the whole run
+     * skips them smoothly instead of lurching through the joins.
+     */
+    fun skipSpanEnd(segments: List<Segment>, segment: Segment, gapMs: Long = 750): Long {
+        var end = segment.endMs
+        var grew = true
+        while (grew) {
+            grew = false
+            for (s in segments) {
+                if (s.action == Action.Auto && s.startMs <= end + gapMs && s.endMs > end) {
+                    end = s.endMs
+                    grew = true
+                }
+            }
+        }
+        return end
+    }
+
+    /** Every auto segment an auto-skip from [segment] through [endMs] leaves behind it. */
+    fun segmentsWithin(segments: List<Segment>, segment: Segment, endMs: Long): List<Segment> =
+        segments.filter { it.action == Action.Auto && it.startMs >= segment.startMs && it.endMs <= endMs }
 
     private fun request(videoId: String): List<Segment> {
         val prefix = MessageDigest.getInstance("SHA-256").digest(videoId.toByteArray())
@@ -110,7 +170,7 @@ object SponsorBlock {
         val url = "https://sponsor.ajay.app/api/skipSegments/$prefix?categories=" +
             java.net.URLEncoder.encode(categories, "UTF-8") + "&actionType=skip"
         val request = Request.Builder().url(url).header("User-Agent", "Shinobi/${BuildConfig.VERSION_NAME}").build()
-        Net.client.newCall(request).execute().use { r ->
+        api.newCall(request).execute().use { r ->
             if (r.code == 404) return emptyList() // no video with this prefix has segments
             if (!r.isSuccessful) throw java.io.IOException("SponsorBlock ${r.code}")
             val arr = JSONArray(r.body?.string().orEmpty())

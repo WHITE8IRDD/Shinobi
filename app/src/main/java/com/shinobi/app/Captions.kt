@@ -115,7 +115,13 @@ object CaptionParser {
     private fun cleanText(source: String): String {
         var value = source
             .replace(Regex("(?i)<br\\s*/?>"), "\n")
-            .replace(Regex("<[^>]*>"), " ")
+            // YouTube's auto-captions carry each word in its own <s> span, and the spans are not
+            // always separated by whitespace in the source: keep the words apart.
+            .replace(Regex("(?i)</s\\s*>"), " ")
+            // Every other tag (i, b, c, v, ruby, …) is styling around words that are already
+            // spaced in the text, so it is dropped without leaving a gap: a tag between "world"
+            // and "!" must not become "world !".
+            .replace(Regex("<[^>]*>"), "")
         repeat(2) {
             value = entity.replace(value) { match ->
                 val hex = match.groupValues[1]

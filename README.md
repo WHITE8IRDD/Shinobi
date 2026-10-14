@@ -18,8 +18,14 @@ Shinobi is built with Kotlin, Jetpack Compose and AndroidX Media3. It is a commu
 - Signed-out **Recent on this device** history is private, bounded to 100 videos, and clearable in one tap. It is not uploaded or synced.
 - Comments, replies, likes, subscriptions, Watch later, playlists, channel pages and account watch-history sync are available when signed in.
 
+### Skipping ads and sponsor reads
+- **Zero ads.** Streams are extracted directly, so YouTube's ads never load and there is nothing to detect, click past or wait out. There are no interstitials, banners, pre-rolls or rewarded placements anywhere in the app, and no ad, analytics or tracking SDK in the build. See *No ads, enforced* below.
+- SponsorBlock finds the sponsor reads that are *inside* a video and takes them out of the way as smoothly as possible: the jump happens the moment the segment starts (nothing of it is ever shown), abutting segments are merged into a single jump, and the audio fades back up over 250 ms so the cut lands as a soft dip rather than a click.
+- Skips keep up with how you actually watch: a position watch catches segments entered by scrubbing, by resuming inside one, or by segment data that arrives after playback already passed its start — not just a plain play-through.
+- Every skip is announced with a "Skipped · Undo" note, and a segment is only ever skipped once per viewing: Undo really undoes, and sitting inside a skipped segment won't throw you out of it again.
+- Per-category control (Sponsor, self-promotion, interaction reminder, intro, outro, preview, non-music, filler): skip, ask with a one-tap pill, mark on the scrubber, or off.
+
 ### Thoughtful defaults
-- SponsorBlock controls by category: skip, ask, mark on the scrubber, or turn off.
 - Material You wallpaper colors, a Shinobi Ember palette, other light/dark themes, reduced-motion support and haptic controls.
 - No ad SDK, analytics SDK, tracking SDK, paid API keys or proprietary backend. The app talks directly to YouTube's public site endpoints and, when enabled, SponsorBlock.
 
@@ -55,6 +61,24 @@ app/src/main/java/com/shinobi/app/
 app/src/test/         parser tests against real response fixtures plus caption tests
 ```
 
+## No ads, enforced
+
+Shinobi's reason to exist is a strict zero-ads policy, so it is not a promise in a README — CI
+fails the build if it is ever broken:
+
+- a guard scans the build files, the manifest and the whole repository for advertising and
+  tracking SDK references (AdMob, AppLovin, ironSource, MoPub, Chartboost, Vungle, StartApp,
+  InMobi, `play-services-ads`, the Facebook SDK, `ads-identifier`, Crashlytics/Firebase
+  analytics, Mixpanel, Amplitude, Segment, and a removed predecessor brand name) and stops the
+  build if one appears;
+- a second guard resolves the release runtime classpath and fails if any advertising or
+  tracking SDK is on it;
+- the same guard also fails if the name of the project Shinobi was forked from is ever added
+  back to the repository.
+
+There is no ad-serving code, no consent flow, no ad identifier and no remote switch that could
+turn advertising on, because no such component is linked into the app.
+
 ## Privacy, accounts and service limits
 
 - Search and playback work without sign-in. Recent history and resume positions are stored in app-private preferences; recent history is capped at 100 items and has a clear control.
@@ -64,4 +88,4 @@ app/src/test/         parser tests against real response fixtures plus caption t
 
 ## License and attribution
 
-Shinobi is distributed under **GNU GPL version 3 (GPL-3.0)**. Portions of the app are a modified derivative of [Skipii](https://github.com/deciocrytek/Skipii), used under its GPL-3.0 license. See [`NOTICE`](NOTICE) for attribution and third-party licenses. The GPL text is in [`LICENSE`](LICENSE).
+Shinobi is distributed under **GNU GPL version 3 (GPL-3.0)**. It began as a fork of an earlier free-software YouTube client by Decio Crytek, released under the same license; that license and the freedoms it guarantees are preserved here. See [`NOTICE`](NOTICE) for provenance, attribution and third-party licenses. The GPL text is in [`LICENSE`](LICENSE).
