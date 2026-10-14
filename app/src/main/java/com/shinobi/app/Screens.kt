@@ -453,12 +453,11 @@ private fun FilterPill(
             )
             Spacer(Modifier.width(6.dp))
         }
-        Text(
+        OneLineFitText(
             label,
             color = if (selected) c.onPrimary else c.onSurface,
             fontWeight = FontWeight.Bold,
-            fontSize = 13.sp,
-            maxLines = 1,
+            baseSize = 13.sp,
         )
     }
 }
