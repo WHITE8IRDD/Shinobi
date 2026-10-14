@@ -17,8 +17,9 @@ object DeviceRam {
     fun init(context: Context) {
         val am = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
         val flagged = am?.isLowRamDevice == true
-        val total = am?.totalMem ?: 0L
+        val info = ActivityManager.MemoryInfo()
+        am?.getMemoryInfo(info)
         // Below ~3.5 GB total, treat as low-RAM (a "3 GB" phone has less usable to the app).
-        lowRam = flagged || total in 1 until 3_500_000_000L
+        lowRam = flagged || info.totalMem in 1 until 3_500_000_000L
     }
 }

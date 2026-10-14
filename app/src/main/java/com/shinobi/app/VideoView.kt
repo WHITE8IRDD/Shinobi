@@ -886,7 +886,7 @@ private fun Scrubber(
                         val placeable = measurable.measure(constraints.copy(minWidth = 0, minHeight = 0))
                         layout(constraints.maxWidth, constraints.maxHeight) {
                             val x = (drag * constraints.maxWidth - placeable.width / 2f)
-                                .coerceIn(0f, (constraints.maxWidth - placeable.width).coerceAtLeast(0f))
+                                .coerceIn(0f, (constraints.maxWidth - placeable.width).coerceAtLeast(0).toFloat())
                             placeable.place(x.toInt(), 0)
                         }
                     }
