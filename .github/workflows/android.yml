@@ -61,6 +61,22 @@ jobs:
           fi
           echo "Release runtime classpath is free of advertising and tracking SDKs."
 
+      - name: Branding assets are up to date
+        run: |
+          # Every icon and logo in the app is generated from branding/source/shinobi-mark.svg.
+          # Regenerate and fail if the checked-in assets differ, so a hand-edited drawable or a
+          # master artwork change that was not propagated cannot ship.
+          if ! command -v node >/dev/null 2>&1; then
+            echo "::error::node is required to verify the generated branding assets."
+            exit 1
+          fi
+          node branding/generate-icons.mjs
+          if ! git diff --exit-code --stat -- app/src/main/res branding/preview branding/store ; then
+            echo "::error::Generated branding assets are stale. Run 'node branding/generate-icons.mjs' and commit the result."
+            exit 1
+          fi
+          echo "Generated branding assets match branding/source/shinobi-mark.svg."
+
       - name: Unit tests
         run: |
           set -o pipefail

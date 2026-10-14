@@ -2,4 +2,6 @@
     <style name="Theme.Shinobi" parent="android:Theme.Material.NoActionBar">
         <item name="android:windowBackground">@color/window_dark</item>
     </style>
+    <!-- Theme.Shinobi.Starting needs no night override: its colours are @color resources that
+         already have night variants (values-night/colors.xml). -->
 </resources>

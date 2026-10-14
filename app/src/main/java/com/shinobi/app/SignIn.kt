@@ -168,6 +168,8 @@ fun AccountSheet(onSignIn: () -> Unit, onSignedOut: () -> Unit, onDismiss: () ->
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             if (profile == null) {
+                BrandTile(size = 64.dp)
+                Spacer(Modifier.height(16.dp))
                 Text(Loc.t("Your YouTube, without the ads"), fontFamily = RoundedHeavy, fontWeight = FontWeight.ExtraBold, fontSize = 20.sp, textAlign = TextAlign.Center)
                 Spacer(Modifier.height(8.dp))
                 Text(

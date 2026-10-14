@@ -12,9 +12,9 @@ android {
         applicationId = "com.shinobi.app"
         minSdk = 26
         targetSdk = 36
-        // SHINOBI 1.0 (product owner, 2026-10-14). A release build is identifiable in About.
-        versionCode = 4
-        versionName = "1.0"
+        // SHINOBI 1.1 (product owner, 2026-10-14). A release build is identifiable in About.
+        versionCode = 5
+        versionName = "1.1"
     }
 
     buildTypes {
@@ -62,6 +62,9 @@ dependencies {
 
     implementation(composeBom)
     implementation("androidx.core:core-ktx:1.15.0")
+    // Brings the launch screen (brand emblem on the page colour) to every supported Android
+    // version, not just Android 12 and newer.
+    implementation("androidx.core:core-splashscreen:1.0.1")
     implementation("androidx.activity:activity-compose:1.10.1")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")

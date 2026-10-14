@@ -15,7 +15,7 @@
         android:allowBackup="false"
         android:enableOnBackInvokedCallback="true"
         android:icon="@mipmap/ic_launcher"
-        android:roundIcon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:usesCleartextTraffic="false"
         android:label="@string/app_name"
         android:supportsRtl="true"
@@ -27,6 +27,7 @@
             android:launchMode="singleTask"
             android:supportsPictureInPicture="true"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden"
+            android:theme="@style/Theme.Shinobi.Starting"
             android:windowSoftInputMode="adjustResize|stateAlwaysHidden">
             <!-- Orientation is set at runtime (OrientationController): portrait everywhere
                  except the open player. configChanges keeps the activity, the player
