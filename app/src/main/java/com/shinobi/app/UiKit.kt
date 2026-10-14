@@ -45,6 +45,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.testTag
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -354,6 +355,7 @@ fun VideoCard(video: VideoItem, onClick: () -> Unit, modifier: Modifier = Modifi
     val shape = RoundedCornerShape(28.dp)
     Column(
         modifier = modifier
+            .testTag("video-card")
             .padding(horizontal = 16.dp, vertical = 7.dp)
             .fillMaxWidth()
             .prefetchOnPress(video.id)

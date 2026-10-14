@@ -118,6 +118,9 @@ jobs:
 
   layout-tests:
     runs-on: ubuntu-latest
+    permissions:
+      # Only for the opt-in screenshot commit below; everything else is read-only.
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v5
@@ -130,20 +133,62 @@ jobs:
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
-      - name: Narrow-screen English and Arabic layout regressions
+      - name: Narrow-screen English and Arabic layout regressions, app screenshots
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
           arch: x86_64
           profile: pixel_2
           disable-animations: true
-          script: bash -o pipefail -c './gradlew connectedDebugAndroidTest --console=plain 2>&1 | tee layout.log'
+          # The screenshot tests write to Download/shinobi-screenshots on the emulator; pull
+          # them before the emulator is torn down, whether or not the tests passed.
+          script: |
+            bash -o pipefail -c './gradlew connectedDebugAndroidTest --console=plain 2>&1 | tee layout.log' || touch device-tests-failed
+            adb pull /sdcard/Download/shinobi-screenshots screenshots || echo no screenshots were produced
+            adb logcat -d -s ShinobiShots:I > screenshots.log || true
+            test ! -f device-tests-failed
       - name: Annotate device test failures
         if: failure()
         run: python3 .github/scripts/annotate_failure.py layout.log 160
       - name: Summarize device tests
         if: always()
         run: python3 .github/scripts/summarize_tests.py app/build/outputs/androidTest-results
+      - name: List screenshots
+        if: always()
+        run: |
+          if [ -d screenshots ]; then
+            ls -l screenshots
+            for f in screenshots/*.txt; do [ -f "$f" ] && { echo "--- $f"; cat "$f"; echo; }; done
+          else
+            echo "No screenshots directory."
+          fi
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: |
+            screenshots
+            screenshots.log
+          if-no-files-found: ignore
+      # Opt in per commit with "[screenshots]" in the message: the pictures are committed to
+      # docs/screenshots on the same branch so they can be reviewed (and linked from release
+      # notes) without downloading artifacts. The bot commit is marked [skip ci].
+      - name: Commit the screenshots to the branch
+        if: >-
+          always() && github.event_name == 'push' &&
+          contains(github.event.head_commit.message, '[screenshots]')
+        run: |
+          if [ ! -d screenshots ]; then echo "No screenshots to commit."; exit 0; fi
+          rm -rf docs/screenshots && mkdir -p docs/screenshots
+          cp screenshots/* docs/screenshots/
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/screenshots
+          if git diff --cached --quiet; then echo "Screenshots unchanged."; exit 0; fi
+          git commit -m "docs: device screenshots from run ${{ github.run_id }} [skip ci]"
+          git pull --rebase origin "$GITHUB_REF_NAME" || true
+          git push origin "HEAD:$GITHUB_REF_NAME"
       - name: Upload device test reports
         if: always()
         uses: actions/upload-artifact@v4
