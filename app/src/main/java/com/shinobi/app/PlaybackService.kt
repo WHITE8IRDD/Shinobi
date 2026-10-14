@@ -36,6 +36,7 @@ import androidx.media3.exoplayer.source.MediaSource
 import androidx.media3.exoplayer.source.MergingMediaSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy
+import androidx.media3.session.DefaultMediaNotificationProvider
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import com.google.common.util.concurrent.ListenableFuture
@@ -127,6 +128,14 @@ class PlaybackService : MediaSessionService() {
             .setSessionActivity(openApp)
             .setCallback(SessionCallback())
             .build()
+        // The notification's status-bar icon and channel name are Shinobi's, not the library
+        // defaults. The emblem is a flat white stencil, so the system tints it to whatever the
+        // notification shade needs instead of showing a black square inside the status bar.
+        val notification = DefaultMediaNotificationProvider.Builder(this)
+            .setChannelName(R.string.app_name)
+            .build()
+            .apply { setSmallIcon(R.drawable.ic_notification) }
+        setMediaNotificationProvider(notification)
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session

@@ -320,9 +320,14 @@ fun AboutSettings() {
     val c = MaterialTheme.colorScheme
     Column(Modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Shinobi", fontFamily = RoundedHeavy, fontWeight = FontWeight.ExtraBold, fontSize = 18.sp)
-            Spacer(Modifier.width(8.dp))
-            Text(Loc.t("Version") + " " + BuildConfig.VERSION_NAME, color = c.onSurfaceVariant, fontSize = 13.sp)
+            // The launcher icon, in the app: this is the one place the product names itself, so
+            // it carries the brand tile rather than a bare word.
+            BrandTile(size = 40.dp)
+            Spacer(Modifier.width(12.dp))
+            Column {
+                Text("Shinobi", fontFamily = RoundedHeavy, fontWeight = FontWeight.ExtraBold, fontSize = 18.sp)
+                Text(Loc.t("Version") + " " + BuildConfig.VERSION_NAME, color = c.onSurfaceVariant, fontSize = 13.sp)
+            }
         }
         Spacer(Modifier.height(10.dp))
         Text(

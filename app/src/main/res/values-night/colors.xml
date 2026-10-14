@@ -1,0 +1,5 @@
+<resources>
+    <!-- Dark splash: the page goes near-black, so the emblem inverts to white. -->
+    <color name="splash_background">#171113</color>
+    <color name="splash_mark">#FFF8F7</color>
+</resources>

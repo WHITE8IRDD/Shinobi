@@ -58,6 +58,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -127,19 +128,41 @@ fun ScreenHeader(
     }
 }
 
+/**
+ * The Shinobi emblem as a compact brand tile: the launcher icon's mark, drawn on a tile in the
+ * active palette's primary so it stays legible in light and dark mode and in every theme. The
+ * eye slits are holes in the vector, so what shows through them is the tile itself.
+ *
+ * [size] is the tile. The mark occupies 70% of it, which is the launcher icon's own proportion —
+ * the emblem's enclosing circle fills 90% of a mask that is two-thirds of the icon tile — so the
+ * header, the About sheet and the app icon carry the same weight instead of reading as three
+ * different drawings of one shape.
+ */
 @Composable
-fun BrandMark() {
+fun BrandTile(size: Dp = 38.dp) {
     val c = MaterialTheme.colorScheme
     Box(
         modifier = Modifier
-            .size(width = 40.dp, height = 30.dp)
-            .clip(RoundedCornerShape(11.dp))
-            .background(Brush.linearGradient(listOf(c.primary, c.primary.copy(alpha = 0.82f)))),
+            .size(size)
+            .clip(RoundedCornerShape(size * 0.30f))
+            .background(Brush.linearGradient(listOf(c.primary, c.primary.copy(alpha = 0.86f)))),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(painterResource(R.drawable.ic_shinobi_mark), contentDescription = null, tint = c.onPrimary, modifier = Modifier.size(21.dp))
+        Icon(
+            painterResource(R.drawable.ic_shinobi_mark),
+            contentDescription = null,
+            tint = c.onPrimary,
+            modifier = Modifier.size(size * 0.70f),
+        )
     }
 }
+
+/**
+ * The brand tile as it appears in the Home header. The launcher ring around the emblem, so the
+ * icon a person taps and the mark at the top of the app are the same object.
+ */
+@Composable
+fun BrandMark() = BrandTile()
 
 @Composable
 fun CircleAction(icon: ImageVector, contentDescription: String, onClick: () -> Unit) {

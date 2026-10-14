@@ -104,6 +104,7 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.launch
 
@@ -120,6 +121,9 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Must come first: it swaps the launch theme (brand emblem on the page colour) for the
+        // normal window background before the first frame is drawn.
+        installSplashScreen()
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         // The media notification (and its lock-screen controls) needs this on Android 13+.

@@ -2,4 +2,19 @@
     <style name="Theme.Shinobi" parent="android:Theme.Material.Light.NoActionBar">
         <item name="android:windowBackground">@color/window_light</item>
     </style>
+
+    <!--
+      Launch theme. The launcher-icon emblem is drawn centred on the page colour while the app
+      starts, so the icon, the splash and the first frame read as one continuous brand surface.
+      The activity switches to Theme.Shinobi as soon as the window is ready
+      (postSplashScreenTheme), which is what leaves the normal window background behind.
+
+      Defined once, not per-night: every colour it uses is a @color resource with its own night
+      variant, so the dark splash follows automatically.
+    -->
+    <style name="Theme.Shinobi.Starting" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/splash_background</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_splash_mark</item>
+        <item name="postSplashScreenTheme">@style/Theme.Shinobi</item>
+    </style>
 </resources>

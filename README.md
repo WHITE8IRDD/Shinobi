@@ -73,7 +73,22 @@ app/src/main/java/com/shinobi/app/
   AppSettings.kt      feed behaviour: mixed Shorts, Shorts auto-hide
   Theme.kt / UiKit.kt expressive color, layout and reusable components
 app/src/test/         parser tests against real response fixtures plus caption tests
+branding/             the mark, and the generator that turns it into every app asset
 ```
+
+### The brand, from one file
+
+The launcher icon, the splash screen, the media notification, the header tile and About all come
+from `branding/source/shinobi-mark.svg`. Edit that one file and regenerate:
+
+```sh
+cd branding && node generate-icons.mjs
+```
+
+The generator writes the adaptive-icon layers, the themed-icon layer, the notification stencil,
+the splash emblem, the in-app mark, the legacy launcher bitmaps and the previews — and it fails
+rather than emit an icon that a launcher mask could crop or that would look undersized next to
+other apps. `branding/README.md` has the sizing rules in full.
 
 ## No ads, enforced
 

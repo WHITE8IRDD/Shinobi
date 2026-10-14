@@ -1,6 +1,12 @@
 <resources>
-    <color name="launcher_background">#21191A</color>
+    <!-- Brand seed. The launcher tile is near-black with a white mark (see
+         branding/source/shinobi-mark.svg), so the icon stays unmistakable on any wallpaper. -->
     <color name="brand">#C3434B</color>
     <color name="window_light">#FFF8F7</color>
     <color name="window_dark">#171113</color>
+
+    <!-- Splash. The emblem is near-black on the warm light page and white on the dark one, so it
+         reads as the same artwork as the launcher icon without disappearing at either extreme. -->
+    <color name="splash_background">#FFF8F7</color>
+    <color name="splash_mark">#171113</color>
 </resources>
