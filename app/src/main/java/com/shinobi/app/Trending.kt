@@ -17,7 +17,10 @@ import kotlinx.coroutines.launch
 import java.util.Locale
 
 @Stable
-class TrendingState(private val scope: CoroutineScope) {
+class TrendingState(
+    private val scope: CoroutineScope,
+    private val loader: suspend (String) -> FeedPage = InnerTube::trending,
+) {
     var videos by mutableStateOf<List<VideoItem>>(emptyList())
         private set
     var loading by mutableStateOf(false)
@@ -25,6 +28,7 @@ class TrendingState(private val scope: CoroutineScope) {
     var error by mutableStateOf<String?>(null)
         private set
     private var job: Job? = null
+    private var loadedCountry: String? = null
     private val cache = object : LinkedHashMap<String, Pair<Long, List<VideoItem>>>(8, .75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Pair<Long, List<VideoItem>>>?) = size > 8
     }
@@ -32,7 +36,9 @@ class TrendingState(private val scope: CoroutineScope) {
     fun load(country: String, refresh: Boolean = false) {
         job?.cancel()
         error = null
-        videos = emptyList() // Never show a different country's chart under the new selector.
+        // Keep the current chart during an explicit refresh, but never under another country.
+        if (loadedCountry != country || !refresh) videos = emptyList()
+        loadedCountry = country
         val cached = cache[country]
         if (!refresh && cached != null && System.currentTimeMillis() - cached.first < 600_000) {
             videos = cached.second
@@ -42,13 +48,13 @@ class TrendingState(private val scope: CoroutineScope) {
         loading = true
         job = scope.launch {
             try {
-                val page = InnerTube.trending(country)
+                val page = loader(country)
                 if (!isActive) return@launch
                 videos = page.videos.distinctBy { it.id }.take(100)
                 if (videos.isEmpty()) error = Loc.t("YouTube has no trending chart for this country right now.")
                 else cache[country] = System.currentTimeMillis() to videos
             } catch (e: CancellationException) { throw e }
-            catch (e: Exception) { error = YouTube.friendlyError(e) }
+            catch (e: Exception) { if (isActive) error = YouTube.friendlyError(e) }
             finally { if (isActive) loading = false }
         }
     }

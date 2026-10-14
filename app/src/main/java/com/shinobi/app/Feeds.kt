@@ -130,7 +130,7 @@ class FeedState(
     fun reset() {
         job?.cancel()
         shown.clear()
-        videos = emptyList(); next = null; loaded = false; loading = false; error = null
+        videos = emptyList(); next = null; loaded = false; loading = false; refreshing = false; error = null
     }
 
     private companion object {

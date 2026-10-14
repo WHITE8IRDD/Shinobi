@@ -183,6 +183,12 @@ jobs:
               printf 'The release APK is minified for daily use. The debug APK contains the same source without minification and is useful when investigating a bug.\n'
             } > notes.md
 
+            # Keep version-specific changes and validation/signing limitations with the APKs.
+            if [[ -f "docs/releases/$TAG.md" ]]; then
+              printf '\n---\n\n' >> notes.md
+              cat "docs/releases/$TAG.md" >> notes.md
+            fi
+
             release_args=(--title "$NAME" --notes-file notes.md)
             # A pushed tag already names its commit; only a manual run needs --target.
             if [[ "$REF_TYPE" != "tag" ]]; then

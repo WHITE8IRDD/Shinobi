@@ -284,7 +284,8 @@ object InnerTube {
         val selected = (0 until (tabs?.length() ?: 0)).mapNotNull { tabs?.optJSONObject(it)?.optJSONObject("tabRenderer") }
             .firstOrNull { it.optBoolean("selected") }?.optJSONObject("content")
         // Do not accidentally traverse unselected tabs, account menus or unrelated sidebars.
-        val page = parseFeed(selected ?: root.optJSONObject("contents") ?: JSONObject())
+        val content = if (tabs != null) selected else root.optJSONObject("contents")
+        val page = parseFeed(content ?: JSONObject())
         return FeedPage(page.videos, null) // Trending is a finite chart, not a personalized continuation.
     }
 

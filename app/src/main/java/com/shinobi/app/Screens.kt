@@ -1333,6 +1333,7 @@ fun SearchScreen(
     val focus = LocalFocusManager.current
     val view = LocalView.current
     androidx.compose.runtime.DisposableEffect(state) { onDispose { state.suggestions.dismiss() } }
+    androidx.activity.compose.BackHandler(enabled = state.suggestions.visible) { state.suggestions.dismiss() }
 
     fun submit(overrideQuery: String? = null) {
         focus.clearFocus(force = true)
@@ -1389,6 +1390,7 @@ fun SearchScreen(
                         ) { Icon(Icons.Rounded.Close, Loc.t("Clear"), tint = c.onSurfaceVariant) }
                     }
                 }
+                if (state.loading) androidx.compose.material3.LinearProgressIndicator(modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp))
                 Spacer(Modifier.height(8.dp))
             }
         },
@@ -1484,7 +1486,7 @@ fun SearchScreen(
                                     )
                                 }
                             }
-                            items(state.results, key = { it.id }) { video ->
+                            items(state.results, key = { it.id }, contentType = { "video" }) { video ->
                                 VideoCard(video, onClick = { onOpen(video) })
                             }
                         }
