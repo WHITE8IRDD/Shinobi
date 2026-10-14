@@ -109,6 +109,9 @@ class PlayerState(private val scope: CoroutineScope) {
     val currentCaption: CaptionCue? get() = CaptionParser.cueAt(captionCues, positionMs)
 
     var expanded by mutableStateOf(false)
+    /** True while the vertical Shorts feed owns playback (no mini-player, loops on end). */
+    var inShortsMode by mutableStateOf(false)
+        private set
     /** Landscape fullscreen requested (button) or entered (rotation). */
     var fullscreen by mutableStateOf(false)
     /** Which bottom sheet is open over the player, if any. */
@@ -140,10 +143,37 @@ class PlayerState(private val scope: CoroutineScope) {
         private set
 
     fun open(item: VideoItem, expand: Boolean = true) {
+        if (inShortsMode) {
+            inShortsMode = false
+            controller?.repeatMode = Player.REPEAT_MODE_OFF
+        }
         if (expand) expanded = true
         if (current?.id == item.id && error == null) return
         known[item.id] = item
         show(item, startPlayback = true)
+    }
+
+    /** Plays [item] inside the vertical Shorts feed (looping, no mini-player). */
+    fun openShort(item: VideoItem) {
+        val shortItem = item.copy(isShort = true)
+        inShortsMode = true
+        expanded = false
+        fullscreen = false
+        controller?.repeatMode = Player.REPEAT_MODE_ONE
+        if (current?.id == shortItem.id && error == null) {
+            if (controller?.isPlaying == false) controller?.play()
+            return
+        }
+        known[shortItem.id] = shortItem
+        show(shortItem, startPlayback = true)
+    }
+
+    /** Stops Shorts playback when leaving the Shorts tab so no mini-player is left behind. */
+    fun exitShortsMode() {
+        if (!inShortsMode) return
+        inShortsMode = false
+        controller?.repeatMode = Player.REPEAT_MODE_OFF
+        close()
     }
 
     /**
@@ -169,14 +199,14 @@ class PlayerState(private val scope: CoroutineScope) {
         sheet = null
         comments.clearFor(item.id)
         accountState = null
-        inWatchLater = false
+        inWatchLater = LocalHistory.isInWatchLater(item.id)
         speedPanelOpen = false
         captionsJob?.cancel()
         captionTrack = null
         captionCues = emptyList()
         captionsLoading = false
         captionsError = null
-        if (!startPlayback) LocalHistory.record(item)
+        LocalHistory.record(item)
         if (Account.signedIn) {
             scope.launch {
                 runCatching { InnerTube.videoState(item.id) }
@@ -190,15 +220,18 @@ class PlayerState(private val scope: CoroutineScope) {
                 .onSuccess { d ->
                     Log.i("ShinobiTime", "details +${android.os.SystemClock.elapsedRealtime() - openedAt}ms")
                     details = d
+                    current = d.item.copy(isShort = item.isShort || d.item.isShort)
+                    LocalHistory.record(current!!)
+                    LocalHistory.cacheRelated(item.id, d.related)
                     applyPreferredCaption(d.captions)
                     // The player takes the video's shape before its first frame arrives.
                     if (!aspectFromFrames) d.aspect?.let { videoAspect = it }
                     // Comments wait for the stream data: their request duplicates the video
                     // page fetch and only slowed down the critical path.
                     comments.load(item.id)
-                    known[item.id] = d.item
+                    known[item.id] = current!!
                     if (!d.playable) error = "No playable stream was found for this video."
-                    else if (startPlayback) startPlayback(d.item)
+                    else if (startPlayback) startPlayback(current!!)
                 }
                 .onFailure {
                     Log.w(TAG, "details failed for ${item.id}", it)
@@ -348,7 +381,7 @@ class PlayerState(private val scope: CoroutineScope) {
     fun refreshAccountState() {
         val item = current ?: return
         accountState = null
-        inWatchLater = false
+        inWatchLater = LocalHistory.isInWatchLater(item.id)
         if (!Account.signedIn) return
         scope.launch {
             runCatching { InnerTube.videoState(item.id) }
@@ -357,11 +390,21 @@ class PlayerState(private val scope: CoroutineScope) {
         }
     }
 
+    val effectiveLikeStatus: LikeStatus
+        get() = accountState?.like ?: current?.id?.let(LocalHistory::likeStatus) ?: LikeStatus.None
+
+    val effectiveSubscribed: Boolean?
+        get() = accountState?.subscribed ?: run {
+            val item = details?.item ?: current ?: return@run null
+            val key = item.channelUrl ?: item.channel.takeIf { it.isNotBlank() } ?: return@run null
+            LocalHistory.isSubscribed(key)
+        }
+
     /** Like count adjusted for the user's own change since the video opened. */
     val displayLikes: Long
         get() {
             val base = details?.likes ?: return -1
-            val now = accountState?.like ?: return base
+            val now = effectiveLikeStatus
             return base + when {
                 now == LikeStatus.Like && originalLike != LikeStatus.Like -> 1
                 now != LikeStatus.Like && originalLike == LikeStatus.Like -> -1
@@ -370,49 +413,72 @@ class PlayerState(private val scope: CoroutineScope) {
         }
 
     fun setLike(target: LikeStatus) {
-        val id = current?.id ?: return
-        val before = accountState ?: return
-        val next = if (before.like == target) LikeStatus.None else target
-        accountState = before.copy(like = next)
-        scope.launch {
-            runCatching { InnerTube.setLike(id, next) }
-                .onFailure { accountState = before; actionMessage = "Couldn't update your like." }
+        val item = details?.item ?: current ?: return
+        val beforeStatus = effectiveLikeStatus
+        val next = if (beforeStatus == target) LikeStatus.None else target
+        LocalHistory.setLike(item, next)
+        val beforeAccount = accountState
+        if (beforeAccount != null) {
+            accountState = beforeAccount.copy(like = next)
+            scope.launch {
+                runCatching { InnerTube.setLike(item.id, next) }
+                    .onFailure { accountState = beforeAccount; actionMessage = "Couldn't update your like." }
+            }
         }
     }
 
     fun toggleSubscribe() {
-        val before = accountState ?: return
-        val channelId = before.channelId
-            ?: details?.item?.channelUrl?.substringAfter("/channel/", "")?.takeIf { it.startsWith("UC") }
-            ?: return
-        val subscribe = before.subscribed != true
-        accountState = before.copy(subscribed = subscribe, channelId = channelId)
-        scope.launch {
-            runCatching { InnerTube.setSubscribed(channelId, subscribe) }
-                .onFailure { accountState = before; actionMessage = "Couldn't update your subscription." }
+        val item = details?.item ?: current ?: return
+        val before = accountState
+        val channelId = before?.channelId
+            ?: item.channelUrl?.substringAfter("/channel/", "")?.takeIf { it.startsWith("UC") }
+        val subscribe = effectiveSubscribed != true
+        if (item.channel.isNotBlank()) {
+            val refId = channelId ?: item.channelUrl ?: item.channel
+            LocalHistory.setSubscribed(
+                ChannelRef(id = refId, name = item.channel, avatar = item.avatar, url = item.channelUrl),
+                subscribe = subscribe,
+            )
+        }
+        if (before != null && channelId != null) {
+            accountState = before.copy(subscribed = subscribe, channelId = channelId)
+            scope.launch {
+                runCatching { InnerTube.setSubscribed(channelId, subscribe) }
+                    .onFailure { accountState = before; actionMessage = "Couldn't update your subscription." }
+            }
+        } else {
+            actionMessage = if (subscribe) "Following ${item.channel}" else "Unfollowed ${item.channel}"
         }
     }
 
     fun toggleWatchLater() {
-        val id = current?.id ?: return
+        val item = details?.item ?: current ?: return
         val add = !inWatchLater
         inWatchLater = add
-        scope.launch {
-            runCatching { InnerTube.setInWatchLater(id, add) }
-                .onSuccess { actionMessage = if (add) "Saved to Watch later" else "Removed from Watch later" }
-                .onFailure { inWatchLater = !add; actionMessage = "Couldn't update Watch later."; Log.w(TAG, "watch later $id", it) }
+        LocalHistory.setWatchLater(item, add)
+        if (Account.signedIn) {
+            scope.launch {
+                runCatching { InnerTube.setInWatchLater(item.id, add) }
+                    .onSuccess { actionMessage = if (add) "Saved to Watch later" else "Removed from Watch later" }
+                    .onFailure { inWatchLater = !add; actionMessage = "Saved locally on this device"; Log.w(TAG, "watch later ${item.id}", it) }
+            }
+        } else {
+            actionMessage = if (add) "Saved to Watch later" else "Removed from Watch later"
         }
     }
 
     /** Long-press Save. Runs here, not in the sheet: closing the sheet would cancel its scope mid-request. */
     fun saveToWatchLater(video: VideoItem) {
-        scope.launch {
-            runCatching { InnerTube.setInWatchLater(video.id, true) }
-                .onSuccess {
-                    if (current?.id == video.id) inWatchLater = true
-                    actionMessage = "Saved to Watch later"
-                }
-                .onFailure { actionMessage = "Couldn't save to Watch later."; Log.w(TAG, "watch later ${video.id}", it) }
+        LocalHistory.setWatchLater(video, true)
+        if (current?.id == video.id) inWatchLater = true
+        if (Account.signedIn) {
+            scope.launch {
+                runCatching { InnerTube.setInWatchLater(video.id, true) }
+                    .onSuccess { actionMessage = "Saved to Watch later" }
+                    .onFailure { actionMessage = "Saved to Watch later on this device"; Log.w(TAG, "watch later ${video.id}", it) }
+            }
+        } else {
+            actionMessage = "Saved to Watch later"
         }
     }
 
@@ -570,8 +636,13 @@ class PlayerState(private val scope: CoroutineScope) {
         captionCues = emptyList()
         captionsLoading = false
         captionsError = null
-        controller?.run { stop(); clearMediaItems() }
+        controller?.run {
+            repeatMode = Player.REPEAT_MODE_OFF
+            stop()
+            clearMediaItems()
+        }
         queue = emptyList()
+        inShortsMode = false
         expanded = false
         fullscreen = false
         sheet = null

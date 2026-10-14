@@ -61,6 +61,18 @@ class InnerTubeParseTest {
         assertEquals("ordinary videos kept", 4, page.videos.size)
     }
 
+    @Test fun searchShorts() {
+        val shorts = InnerTube.parseShorts(fixture("search"))
+        assertTrue("expected >= 20 shorts in search fixture, got ${shorts.size}", shorts.size >= 20)
+        shorts.forEach { s ->
+            assertEquals(11, s.id.length)
+            assertTrue("isShort flag set for ${s.id}", s.isShort)
+            assertTrue("title for ${s.id}", s.title.isNotBlank())
+            assertNotNull("thumbnail for ${s.id}", s.thumbnail)
+        }
+        assertTrue("most shorts have view counts", shorts.count { it.views > 0 } >= shorts.size * 0.8)
+    }
+
     @Test fun viewCounts() {
         assertEquals(1_234_567L, InnerTube.parseViews("1,234,567 views"))
         assertEquals(1_200_000L, InnerTube.parseViews("1.2M views"))

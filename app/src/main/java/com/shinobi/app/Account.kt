@@ -23,11 +23,17 @@ data class Profile(val name: String, val handle: String?, val avatar: String?)
 data class PlaylistRef(val id: String, val title: String, val thumbnail: String?, val subtitle: String?)
 
 @Immutable
-data class ChannelRef(val id: String, val name: String, val avatar: String?)
+data class ChannelRef(val id: String, val name: String, val avatar: String?, val url: String? = null) {
+    val resolvedUrl: String get() = url ?: if (id.startsWith("http")) id else "https://www.youtube.com/channel/$id"
+}
 
 /** One page of a feed plus the token for the next page, if any. */
 @Immutable
 data class FeedPage(val videos: List<VideoItem>, val next: String?)
+
+/** A search response containing both long-form videos and Shorts. */
+@Immutable
+data class SearchPage(val videos: List<VideoItem>, val shorts: List<VideoItem>, val next: String?)
 
 enum class LikeStatus { Like, Dislike, None }
 
@@ -245,6 +251,27 @@ object InnerTube {
         parseFeed(postAny("browse", body))
     }
 
+    /** Watch-next recommendations for [videoId] (works signed in or signed out). */
+    suspend fun related(videoId: String, continuation: String? = null): FeedPage = withContext(Dispatchers.IO) {
+        val body = if (continuation != null) JSONObject().put("continuation", continuation)
+        else JSONObject().put("videoId", videoId)
+        val root = postAny("next", body)
+        val secondary = root.optJSONObject("contents")
+            ?.optJSONObject("twoColumnWatchNextResults")
+            ?.optJSONObject("secondaryResults")
+        parseFeed(secondary ?: root)
+    }
+
+    /** Searches YouTube (signed in or signed out) and extracts both videos and Shorts. */
+    suspend fun searchPage(query: String, continuation: String? = null): SearchPage = withContext(Dispatchers.IO) {
+        val body = if (continuation != null) JSONObject().put("continuation", continuation)
+        else JSONObject().put("query", query)
+        val root = postAny("search", body)
+        val feed = parseFeed(root)
+        val shorts = parseShorts(root)
+        SearchPage(feed.videos, shorts, feed.next)
+    }
+
     /** The channel page's Videos tab selector (as on youtube.com, 2026-10-06). */
     private const val CHANNEL_VIDEOS_TAB = "EgZ2aWRlb3PyBgQKAjoA"
     suspend fun subscriptionsFeed(next: String? = null) = browse("FEsubscriptions", next)
@@ -434,6 +461,90 @@ object InnerTube {
             }
         }
         return FeedPage(videos.values.toList(), next)
+    }
+
+    /**
+     * Pulls every Short out of an InnerTube response: the newer `shortsLockupViewModel`,
+     * the classic `reelItemRenderer`, and any video item whose endpoint is `reelWatchEndpoint`.
+     */
+    internal fun parseShorts(root: JSONObject): List<VideoItem> {
+        val shorts = LinkedHashMap<String, VideoItem>()
+        root.walk { key, obj ->
+            when (key) {
+                "shortsLockupViewModel" -> parseShortsLockup(obj)?.let { shorts.putIfAbsent(it.id, it) }
+                "reelItemRenderer" -> parseReelItem(obj)?.let { shorts.putIfAbsent(it.id, it) }
+                "videoRenderer", "compactVideoRenderer" -> if (hasReelEndpoint(obj)) {
+                    parseVideoRenderer(obj)?.copy(isShort = true)?.let { shorts.putIfAbsent(it.id, it) }
+                }
+            }
+        }
+        return shorts.values.toList()
+    }
+
+    private fun hasReelEndpoint(o: JSONObject): Boolean =
+        o.optJSONObject("navigationEndpoint")?.has("reelWatchEndpoint") == true ||
+            o.collectStrings("webPageType").any { it == "WEB_PAGE_TYPE_SHORTS" }
+
+    private fun parseShortsLockup(o: JSONObject): VideoItem? {
+        val tapId = o.optJSONObject("onTap")
+            ?.optJSONObject("innertubeCommand")
+            ?.optJSONObject("reelWatchEndpoint")
+            ?.optString("videoId")
+            ?.ifBlank { null }
+        val inlineId = o.optJSONObject("inlinePlayerData")
+            ?.optJSONObject("onVisible")
+            ?.optJSONObject("innertubeCommand")
+            ?.optJSONObject("watchEndpoint")
+            ?.optString("videoId")
+            ?.ifBlank { null }
+        val entityId = o.optString("entityId").removePrefix("shorts-shelf-item-").takeIf { it.length == 11 }
+        val id = (tapId ?: inlineId ?: entityId)?.takeIf { it.length == 11 } ?: return null
+        val overlay = o.optJSONObject("overlayMetadata")
+        val primaryTitle = overlay?.optJSONObject("primaryText")?.optString("content")?.ifBlank { null }
+        val a11y = o.optString("accessibilityText")
+        val fallbackTitle = a11y.substringBeforeLast(" - play Short", "").substringBeforeLast(",", "").trim().ifBlank { null }
+        val title = primaryTitle ?: fallbackTitle ?: return null
+        val viewsText = overlay?.optJSONObject("secondaryText")?.optString("content")?.ifBlank { null }
+            ?: a11y.substringAfterLast(",", "").substringBefore(" - play Short").trim().ifBlank { null }
+        val thumb = o.optJSONObject("thumbnailViewModel")
+            ?.optJSONObject("thumbnailViewModel")
+            ?.optJSONObject("image")
+            ?.optJSONArray("sources")
+            ?.optJSONObject(0)
+            ?.optString("url")
+            ?.ifBlank { null }
+            ?.let(::absoluteUrl)
+            ?: "https://i.ytimg.com/vi/$id/oar2.jpg"
+        return VideoItem(
+            id = id,
+            title = title,
+            channel = "",
+            channelUrl = null,
+            thumbnail = thumb,
+            avatar = null,
+            durationSec = 60,
+            views = parseViews(viewsText),
+            uploaded = null,
+            isShort = true,
+        )
+    }
+
+    private fun parseReelItem(o: JSONObject): VideoItem? {
+        val id = o.optString("videoId").takeIf { it.length == 11 } ?: return null
+        val title = o.text("headline") ?: return null
+        val thumb = o.thumbnails()?.lastOrNull()?.let(::absoluteUrl) ?: "https://i.ytimg.com/vi/$id/oar2.jpg"
+        return VideoItem(
+            id = id,
+            title = title,
+            channel = "",
+            channelUrl = null,
+            thumbnail = thumb,
+            avatar = null,
+            durationSec = 60,
+            views = parseViews(o.text("viewCountText")),
+            uploaded = null,
+            isShort = true,
+        )
     }
 
     /** YouTube's "Members only" badge: BADGE_MEMBERS_ONLY (lockups) / BADGE_STYLE_TYPE_MEMBERS_ONLY (older renderers). */

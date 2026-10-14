@@ -168,8 +168,8 @@ fun seedScheme(seedHex: String, dark: Boolean): ColorScheme {
             onPrimary = Color(0xFFFFFFFF),
             primaryContainer = Color(0xFFE7DCFF),
             onPrimaryContainer = Color(0xFF2A1064),
-            secondaryContainer = Color(0xFFD5F0F6),
-            onSecondaryContainer = Color(0xFF0A3A45),
+            secondaryContainer = Color(0xFFE8DEFF),
+            onSecondaryContainer = Color(0xFF2A1064),
             surface = Color(0xFFF6F4FE),
             surfaceContainer = Color(0xFFFCFBFF),
             surfaceContainerHigh = Color(0xFFEDE9FA),
@@ -185,8 +185,8 @@ fun seedScheme(seedHex: String, dark: Boolean): ColorScheme {
             onPrimary = Color(0xFF23104F),
             primaryContainer = Color(0xFF33206B),
             onPrimaryContainer = Color(0xFFE6DBFF),
-            secondaryContainer = Color(0xFF12303A),
-            onSecondaryContainer = Color(0xFFC9EDF5),
+            secondaryContainer = Color(0xFF281B4D),
+            onSecondaryContainer = Color(0xFFE6DBFF),
             surface = Color(0xFF0A0817),
             surfaceContainer = Color(0xFF1D1B29),
             surfaceContainerHigh = Color(0xFF1F1A3B),
@@ -414,14 +414,17 @@ private fun completeExpressiveScheme(seedHex: String, cs: ColorScheme): ColorSch
 }
 
 /**
- * The chosen theme and light/dark mode, persisted. [seed] null = wallpaper colors
- * (Material You), the default on Android 12+; below that the default is Shinobi Ember.
+ * The chosen theme and light/dark mode, persisted. Shinobi Ember ([SEED_SHINOBI]) is the
+ * default everywhere so accent colors stay consistent across screens; [seed] null = optional
+ * wallpaper colors (Material You) when explicitly chosen in Appearance settings.
  */
 object ThemeSettings {
+    private const val KEY_SEED_CHOICE = "seed_choice"
+    private const val WALLPAPER_SENTINEL = "WALLPAPER"
     private var prefs: SharedPreferences? = null
     val wallpaperAvailable = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
 
-    var seed by mutableStateOf<String?>(null)
+    var seed by mutableStateOf<String?>(SEED_SHINOBI)
         private set
     /** "system", "light" or "dark". */
     var mode by mutableStateOf("system")
@@ -429,13 +432,18 @@ object ThemeSettings {
 
     fun init(context: Context) {
         val p = context.getSharedPreferences("appearance", Context.MODE_PRIVATE).also { prefs = it }
-        seed = p.getString("seed", null) ?: if (wallpaperAvailable) null else SEED_SHINOBI
+        val stored = p.getString(KEY_SEED_CHOICE, null)
+        seed = when {
+            stored == WALLPAPER_SENTINEL && wallpaperAvailable -> null
+            !stored.isNullOrBlank() -> stored
+            else -> SEED_SHINOBI
+        }
         mode = p.getString("mode", "system") ?: "system"
     }
 
     fun choose(seedHex: String?) {
         seed = seedHex
-        prefs?.edit()?.putString("seed", seedHex)?.apply()
+        prefs?.edit()?.putString(KEY_SEED_CHOICE, seedHex ?: WALLPAPER_SENTINEL)?.apply()
     }
 
     fun chooseMode(value: String) {
@@ -446,12 +454,12 @@ object ThemeSettings {
 
 /** Shinobi signature: warm vermilion over soft paper, with an ink-dark night mode. */
 private fun shinobiScheme(dark: Boolean): ColorScheme = if (!dark) lightColorScheme(
-    primary = Color(0xFFB83D49), onPrimary = Color.White,
+    primary = Color(0xFFC83745), onPrimary = Color.White,
     primaryContainer = Color(0xFFFFDADB), onPrimaryContainer = Color(0xFF410009),
     secondary = Color(0xFF75565A), onSecondary = Color.White,
     secondaryContainer = Color(0xFFFFDADB), onSecondaryContainer = Color(0xFF2C1519),
-    tertiary = Color(0xFF755B3D), onTertiary = Color.White,
-    tertiaryContainer = Color(0xFFFFDDB3), onTertiaryContainer = Color(0xFF281900),
+    tertiary = Color(0xFFC83745), onTertiary = Color.White,
+    tertiaryContainer = Color(0xFFFAD7DA), onTertiaryContainer = Color(0xFF410009),
     background = Color(0xFFFFF8F7), onBackground = Color(0xFF21191A),
     surface = Color(0xFFFFF8F7), onSurface = Color(0xFF21191A),
     surfaceVariant = Color(0xFFF2E3E2), onSurfaceVariant = Color(0xFF514345),
@@ -460,19 +468,19 @@ private fun shinobiScheme(dark: Boolean): ColorScheme = if (!dark) lightColorSch
     surfaceContainerHighest = Color(0xFFEBDDDC),
     outline = Color(0xFF837375), outlineVariant = Color(0xFFD6C2C1),
 ) else darkColorScheme(
-    primary = Color(0xFFFFB2B6), onPrimary = Color(0xFF650018),
-    primaryContainer = Color(0xFF8E2634), onPrimaryContainer = Color(0xFFFFDADB),
+    primary = Color(0xFFE54854), onPrimary = Color.White,
+    primaryContainer = Color(0xFF5C1922), onPrimaryContainer = Color(0xFFFFDADB),
     secondary = Color(0xFFE5BDBF), onSecondary = Color(0xFF43292C),
-    secondaryContainer = Color(0xFF5C3F42), onSecondaryContainer = Color(0xFFFFDADB),
-    tertiary = Color(0xFFE7C08F), onTertiary = Color(0xFF412D14),
-    tertiaryContainer = Color(0xFF5A4429), onTertiaryContainer = Color(0xFFFFDDB3),
-    background = Color(0xFF171113), onBackground = Color(0xFFF2EAEA),
-    surface = Color(0xFF171113), onSurface = Color(0xFFF2EAEA),
-    surfaceVariant = Color(0xFF403638), onSurfaceVariant = Color(0xFFD5C2C2),
-    surfaceContainerLowest = Color(0xFF100B0D), surfaceContainerLow = Color(0xFF20181A),
-    surfaceContainer = Color(0xFF251C1E), surfaceContainerHigh = Color(0xFF302628),
-    surfaceContainerHighest = Color(0xFF3B3032),
-    outline = Color(0xFF9D898A), outlineVariant = Color(0xFF514547),
+    secondaryContainer = Color(0xFF4A2B2F), onSecondaryContainer = Color(0xFFFFDADB),
+    tertiary = Color(0xFFE54854), onTertiary = Color.White,
+    tertiaryContainer = Color(0xFF4B1D24), onTertiaryContainer = Color(0xFFFFDADB),
+    background = Color(0xFF140F11), onBackground = Color(0xFFF4ECEC),
+    surface = Color(0xFF140F11), onSurface = Color(0xFFF4ECEC),
+    surfaceVariant = Color(0xFF332729), onSurfaceVariant = Color(0xFFD5C2C2),
+    surfaceContainerLowest = Color(0xFF0E0A0B), surfaceContainerLow = Color(0xFF1C1517),
+    surfaceContainer = Color(0xFF231A1D), surfaceContainerHigh = Color(0xFF2E2326),
+    surfaceContainerHighest = Color(0xFF3A2C30),
+    outline = Color(0xFF9D898A), outlineVariant = Color(0xFF4E4043),
 )
 
 /** YouTube-inspired red palette, available as an optional user theme. */

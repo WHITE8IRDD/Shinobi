@@ -246,7 +246,7 @@ fun PlayerScreen(
                                 }
                             }
                             }
-                            state.accountState?.subscribed?.let { subscribed ->
+                            state.effectiveSubscribed?.let { subscribed ->
                                 SubscribeButton(subscribed, onClick = state::toggleSubscribe)
                             }
                         }
@@ -444,7 +444,7 @@ private fun PlayerActions(state: PlayerState) {
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (state.accountState != null) AccountActions(state)
+        AccountActions(state)
         SpeedButton(state)
         AudioOnlyButton(state)
     }
@@ -459,10 +459,10 @@ private fun Modifier.bleed(x: androidx.compose.ui.unit.Dp) = layout { measurable
     layout(placeable.width - extra, placeable.height) { placeable.place(-extra / 2, 0) }
 }
 
-/** Connected like | dislike group and Save (Watch later), all synced to the account; placed in [PlayerActions]' row. */
+/** Connected like | dislike group and Save (Watch later), synced to the account or stored on-device. */
 @Composable
 private fun AccountActions(state: PlayerState) {
-    val like = state.accountState?.like ?: LikeStatus.None
+    val like = state.effectiveLikeStatus
     var lastLikes by remember { mutableStateOf(state.displayLikes) }
     val likes = state.displayLikes
     val rising = likes >= lastLikes
