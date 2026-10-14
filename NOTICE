@@ -1,0 +1,26 @@
+# Shinobi attribution and third-party notices
+
+## Project provenance
+
+Shinobi is a modified derivative of **Skipii 0.5.20** by Decio Crytek, sourced from commit
+`58d69b4f96563afc2d071c1ac31b3777831ca221` of <https://github.com/deciocrytek/Skipii>.
+Skipii is licensed under GNU GPL version 3. Shinobi retains that license and preserves the
+upstream attribution; this derivative has been rebranded, reorganized and extended with a
+Shinobi theme, on-device signed-out history, caption selection/parsing, tests and project docs.
+The upstream repository's GPL text is included as `LICENSE`.
+
+## Bundled or referenced open-source projects
+
+- [NewPipeExtractor](https://github.com/TeamNewPipe/NewPipeExtractor) — GPL-3.0. Used for
+  YouTube extraction and data parsing.
+- [AndroidX](https://developer.android.com/jetpack/androidx), [Jetpack Compose](https://developer.android.com/jetpack/compose),
+  and [AndroidX Media3](https://github.com/androidx/media) — Apache-2.0.
+- [OkHttp](https://github.com/square/okhttp) — Apache-2.0 and MIT (dual-licensed).
+- [Coil](https://github.com/coil-kt/coil) — Apache-2.0.
+- [Guava](https://github.com/google/guava) — Apache-2.0.
+- [Gradle Wrapper](https://github.com/gradle/gradle) — Apache-2.0; the wrapper JAR and launcher scripts are included.
+- [SponsorBlock](https://sponsor.ajay.app) — community segment data and service, attributed in-app;
+  data is identified there as CC BY-NC-SA 4.0.
+
+The links above point to each project's license and attribution materials. No paid APIs,
+proprietary SDKs, or ad/analytics SDKs are included.
