@@ -17,6 +17,9 @@ import org.schabi.newpipe.extractor.exceptions.AgeRestrictedContentException
 import org.schabi.newpipe.extractor.exceptions.ContentNotAvailableException
 import org.schabi.newpipe.extractor.exceptions.GeographicRestrictionException
 import org.schabi.newpipe.extractor.exceptions.ReCaptchaException
+import org.schabi.newpipe.extractor.exceptions.UnsupportedContentInCountryException
+import org.schabi.newpipe.extractor.kiosk.KioskInfo
+import org.schabi.newpipe.extractor.localization.ContentCountry
 import org.schabi.newpipe.extractor.search.SearchInfo
 import org.schabi.newpipe.extractor.services.youtube.linkHandler.YoutubeSearchQueryHandlerFactory
 import org.schabi.newpipe.extractor.stream.AudioStream
@@ -128,6 +131,38 @@ object YouTube {
         SearchInfo.getInfo(service, handler).relatedItems
             .filterIsInstance<StreamInfoItem>()
             .mapNotNull { it.toVideoItem() }
+    }
+
+    /**
+     * Countries YouTube Charts publishes the Music and Movies trending charts for (the
+     * `LAUNCHED_CHART_COUNTRIES` list of charts.youtube.com, as mirrored by NewPipeExtractor's
+     * `YoutubeChartsBaseKioskExtractor`). Everywhere else those two charts answer with an error,
+     * while the Gaming and Podcasts pages exist for every country.
+     */
+    val CHART_COUNTRIES: Set<String> = setOf(
+        "AE", "AR", "AT", "AU", "BE", "BO", "BR", "CA", "CH", "CL", "CO", "CR", "CZ", "DE",
+        "DK", "DO", "EC", "EE", "EG", "ES", "FI", "FR", "GB", "GT", "HN", "HU", "ID", "IE",
+        "IL", "IN", "IS", "IT", "JP", "KE", "KR", "LU", "MX", "NG", "NI", "NL", "NO", "NZ",
+        "PA", "PE", "PL", "PT", "PY", "RO", "RS", "RU", "SA", "SE", "SV", "TR", "TZ", "UA",
+        "UG", "US", "UY", "ZA", "ZW",
+    )
+
+    /**
+     * What YouTube lists as trending in [country] for one [category]: the very pages YouTube
+     * itself shows since it retired the combined Trending page (21 July 2025) — Music and
+     * Movies from YouTube Charts, Gaming from the Gaming hub, Podcasts from the Podcasts
+     * destination. Read through NewPipeExtractor's kiosks (the same route LibreTube and
+     * NewPipe take), with the country forced on the request so the chart is the regional one.
+     */
+    suspend fun trending(country: String, category: TrendingCategory): List<VideoItem> = withContext(Dispatchers.IO) {
+        val kiosks = service.kioskList.apply { forceContentCountry(ContentCountry(country)) }
+        val extractor = kiosks.getExtractorById(category.kioskId, null)
+        extractor.fetchPage()
+        val info = KioskInfo.getInfo(extractor)
+        val items = info.relatedItems.filterIsInstance<StreamInfoItem>().mapNotNull { it.toVideoItem() }
+        // An empty chart with a recorded parse failure is a failure, not "nothing is trending".
+        if (items.isEmpty()) info.errors.firstOrNull()?.let { throw it }
+        items
     }
 
     suspend fun details(id: String): VideoDetails = withContext(Dispatchers.IO) {
@@ -264,6 +299,7 @@ object YouTube {
         is org.schabi.newpipe.extractor.exceptions.SignInConfirmNotBotException ->
             Loc.t("YouTube is asking to confirm you're not a bot. Try again in a few minutes.")
         is org.schabi.newpipe.extractor.exceptions.PrivateContentException -> Loc.t("This video is private.")
+        is UnsupportedContentInCountryException -> Loc.t("YouTube doesn't publish this chart for the chosen country.")
         // Members-only videos (e.g. "Insider Edition") need a channel membership; Shinobi's
         // stream extraction is anonymous, so it can't play them even when you're a member.
         is ContentNotAvailableException ->

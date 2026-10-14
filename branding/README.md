@@ -39,17 +39,24 @@ needed for the PNG previews and the store icon.
 The constraints are Android's, and the generator enforces them rather than leaving them to
 taste:
 
+- **Centring.** The mark is centred on its *visual* centre — the centre of its bounding box —
+  not on its minimum enclosing circle. The enclosing circle is pulled towards the glyph's
+  widest sweep, and centring on it (v1.5 and earlier) put the emblem 2.7 dp right of the
+  launcher tile's centre and ~1 dp off in the header tile. The generator fails the build if
+  the glyph's box is not centred on the tile.
 - **Adaptive icon.** The canvas is 108 dp and the launcher masks it to 72 dp. Only the centre
-  66 dp is guaranteed to survive *every* mask shape, so the emblem's enclosing circle is fitted
-  to 90% of the 36 dp mask radius. It reads as deliberately full — the way a large, confident
-  icon should — while staying 0.6 dp inside the guaranteed-visible circle, so no launcher can
-  shave a corner off it. The generator fails the build if that ever stops being true.
+  66 dp is guaranteed to survive *every* mask shape. The emblem's fit radius (the circle
+  around its centre that contains all of it) is 27 dp — three quarters of the 36 dp mask —
+  so the glyph stands 49 dp tall and 44 dp wide in the visible disc, a medium mark with an
+  even 11–14 dp of tile around it instead of running to within 4 dp of the mask's edge. The
+  generator fails the build if any margin drops below 8 dp or the mark leaves the safe zone.
 - **Splash.** The platform draws a 288 dp canvas and guarantees the inner 192 dp. The emblem is
-  set to 156 dp across, filling most of that circle with an even margin.
-- **In-app mark.** Filled to the same 90% share of its box, so the header tile, About and the
-  sign-in sheet show the emblem at the same weight as the icon the user tapped to get there.
-- **Notification.** A flat, single-colour stencil at 90% of the 24 dp box: the platform tints it,
-  so it carries no colour of its own.
+  fitted to a 78 dp radius around its centre, filling most of that circle with an even margin.
+- **In-app mark.** Fitted to an 11.5 dp radius in its 24 dp box (the glyph stands 21 dp tall),
+  centred on the same visual centre, so the header tile, About and the sign-in sheet show the
+  emblem exactly where the launcher icon shows it.
+- **Notification.** A flat, single-colour stencil fitted to an 11 dp radius in the 24 dp box:
+  the platform tints it, so it carries no colour of its own.
 
 ## Colour
 

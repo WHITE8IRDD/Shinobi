@@ -327,27 +327,6 @@ object InnerTube {
             if ((page + 1) * 3 < discoveryTopics.size) DISCOVERY_TOKEN + (page + 1) else null)
     }
 
-    /** Public regional chart. No cookies; never substitute search results for Trending. */
-    suspend fun trending(country: String): FeedPage = withContext(Dispatchers.IO) {
-        require(country in java.util.Locale.getISOCountries())
-        val body = JSONObject().put("browseId", "FEtrending")
-        val primary = parseTrending(readPost("browse", body, anonymous = true, country = country))
-        if (primary.videos.isNotEmpty()) primary
-        else parseTrending(readPost("browse", body, anonymous = true, country = country, mobileFirst = true))
-    }
-
-    internal fun parseTrending(root: JSONObject): FeedPage {
-        val contents = root.optJSONObject("contents")
-        val tabs = (contents?.optJSONObject("twoColumnBrowseResultsRenderer")
-            ?: contents?.optJSONObject("singleColumnBrowseResultsRenderer"))?.optJSONArray("tabs")
-        val selected = (0 until (tabs?.length() ?: 0)).mapNotNull { tabs?.optJSONObject(it)?.optJSONObject("tabRenderer") }
-            .firstOrNull { it.optBoolean("selected") }?.optJSONObject("content")
-        // Do not accidentally traverse unselected tabs, account menus or unrelated sidebars.
-        val content = if (tabs != null) selected else root.optJSONObject("contents")
-        val page = parseFeed(content ?: JSONObject())
-        return FeedPage(page.videos, null) // Trending is a finite chart, not a personalized continuation.
-    }
-
     /** A channel's uploads (Videos tab), members-only ones filtered out like everywhere else. */
     suspend fun channelVideos(channelId: String, continuation: String? = null): FeedPage = withContext(Dispatchers.IO) {
         val body = if (continuation != null) JSONObject().put("continuation", continuation)

@@ -232,6 +232,10 @@ class PlayerState(private val scope: CoroutineScope) {
                     known[item.id] = current!!
                     if (!d.playable) error = Loc.t("No playable stream was found for this video.")
                     else if (startPlayback) startPlayback(current!!)
+                    // The likeliest next taps (up next, the queue head) extract in the background
+                    // now, so they start without the extraction wait when the time comes.
+                    queue.firstOrNull()?.let { StreamCache.prefetch(it.id) }
+                    d.related.firstOrNull { !it.isShort && it.id != item.id }?.let { StreamCache.prefetch(it.id) }
                 }
                 .onFailure {
                     Log.w(TAG, "details failed for ${item.id}", it)
@@ -335,6 +339,9 @@ class PlayerState(private val scope: CoroutineScope) {
         val player = controller ?: return
         val from = player.currentMediaItemIndex + 1
         queue = (from until player.mediaItemCount).map { i -> itemFor(player.getMediaItemAt(i)) }
+        // The service builds a queue item's streams from the cache when the playlist reaches
+        // it; extracting the head now means the advance is seamless instead of a stall.
+        queue.firstOrNull()?.let { StreamCache.prefetch(it.id) }
     }
 
     private fun itemFor(media: MediaItem): VideoItem = known[media.mediaId] ?: VideoItem(

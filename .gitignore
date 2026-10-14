@@ -16,3 +16,6 @@ keystore.properties
 .idea/
 *.iml
 .DS_Store
+
+# Local tooling for the branding generator (npm install --no-save sharp)
+branding/node_modules/

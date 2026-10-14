@@ -147,8 +147,9 @@ fun ScreenHeader(
  * active palette's primary so it stays legible in light and dark mode and in every theme. The
  * eye slits are holes in the vector, so what shows through them is the tile itself.
  *
- * [size] is the tile. The mark occupies 70% of it, which is the launcher icon's own proportion —
- * the emblem's enclosing circle fills 90% of a mask that is two-thirds of the icon tile — so the
+ * [size] is the tile. The mark's box takes 70% of it, so the glyph stands about 61% of the tile
+ * tall — the launcher icon's own proportion (a 49 dp glyph in the 72 dp visible disc, see
+ * branding/README.md) — and it is centred on its visual centre, as the launcher icon is, so the
  * header, the About sheet and the app icon carry the same weight instead of reading as three
  * different drawings of one shape.
  */
@@ -342,9 +343,12 @@ fun ChannelAvatar(url: String?, name: String, size: Int = 40) {
     }
 }
 
-/** Full-width feed card: rounded thumbnail inside a 28 dp card, then avatar + title + meta. */
+/**
+ * Full-width feed card: rounded thumbnail inside a 28 dp card, then avatar + title + meta.
+ * With [preview] the thumbnail carries the silent inline preview (see [FeedPreview]).
+ */
 @Composable
-fun VideoCard(video: VideoItem, onClick: () -> Unit, modifier: Modifier = Modifier) {
+fun VideoCard(video: VideoItem, onClick: () -> Unit, modifier: Modifier = Modifier, preview: Boolean = false) {
     val c = MaterialTheme.colorScheme
     val menu = LocalVideoMenu.current
     val shape = RoundedCornerShape(28.dp)
@@ -360,6 +364,7 @@ fun VideoCard(video: VideoItem, onClick: () -> Unit, modifier: Modifier = Modifi
     ) {
         Box {
             Thumbnail(video.thumbnail, Modifier.fillMaxWidth().aspectRatio(16f / 9f))
+            if (preview) FeedPreviewSurface(Modifier.matchParentSize().clip(RoundedCornerShape(22.dp)))
             DurationPill(video.durationSec, Modifier.align(Alignment.BottomEnd).padding(10.dp))
             ResumeBar(video.id, Modifier.align(Alignment.BottomStart))
         }
