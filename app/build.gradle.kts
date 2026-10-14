@@ -12,9 +12,9 @@ android {
         applicationId = "com.shinobi.app"
         minSdk = 26
         targetSdk = 36
-        // SHINOBI 1.2 (product owner, 2026-10-14). A release build is identifiable in About.
-        versionCode = 6
-        versionName = "1.2"
+        // SHINOBI 1.3 — balanced discovery, smart search and regional trending.
+        versionCode = 7
+        versionName = "1.3"
     }
 
     buildTypes {
@@ -88,5 +88,6 @@ dependencies {
 
     // Parser tests use real, checked-in YouTube response fixtures.
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
     testImplementation("org.json:json:20240303")
 }

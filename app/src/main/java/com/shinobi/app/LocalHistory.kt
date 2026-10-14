@@ -11,7 +11,7 @@ import org.json.JSONObject
 import java.util.concurrent.ConcurrentHashMap
 
 /** A recent item held only on this device; it is never sent to the account or a server. */
-data class LocalHistoryEntry(val video: VideoItem, val watchedAtMs: Long)
+data class LocalHistoryEntry(val video: VideoItem, val watchedAtMs: Long, val watchedMs: Long = 0L)
 
 /**
  * Private on-device state for signed-out use (and local taste refinement):
@@ -73,7 +73,7 @@ object LocalHistory {
 
     /** True once the user has searched for or watched at least one video on this device. */
     val hasTasteSignal: Boolean
-        get() = entries.isNotEmpty() || recentQueries.isNotEmpty()
+        get() = entries.isNotEmpty() || recentQueries.isNotEmpty() || likedVideos.isNotEmpty()
 
     /**
      * Reactive signature of the user's latest taste signals (recent watched videos + recent
@@ -84,11 +84,13 @@ object LocalHistory {
 
     private fun refreshTasteKey() {
         tasteKey = buildString {
-            entries.take(8).forEach { e ->
-                append(e.video.id).append(':').append(e.video.channel).append(',')
+            entries.take(100).forEach { e ->
+                append(e.video.id).append(':').append(e.watchedMs >= 5_000).append(':').append(e.video.channel).append(',')
             }
             append('|')
             recentQueries.take(5).forEach { q -> append(q).append(',') }
+            append('|'); likedVideos.take(20).forEach { append(it.id).append(',') }
+            append('|'); dislikedIds.sorted().forEach { append(it).append(',') }
         }
     }
 
@@ -101,7 +103,7 @@ object LocalHistory {
                     val obj = array.optJSONObject(index) ?: continue
                     val item = obj.toVideoItem() ?: continue
                     val watchedAt = obj.optLong("watchedAt", 0L).takeIf { it > 0L } ?: continue
-                    add(LocalHistoryEntry(item, watchedAt))
+                    add(LocalHistoryEntry(item, watchedAt, obj.optLong("watchedMs", 30_000L)))
                 }
             }.take(MAX_ENTRIES)
         }.getOrDefault(emptyList())
@@ -147,6 +149,7 @@ object LocalHistory {
                 }
             }
         }.getOrDefault(emptyList())
+        refreshTasteKey()
     }
 
     @Synchronized
@@ -165,8 +168,18 @@ object LocalHistory {
                 isShort = video.isShort || existing.isShort,
             )
         } else video
-        entries = (listOf(LocalHistoryEntry(merged, watchedAtMs)) + entries.filter { it.video.id != video.id })
+        entries = (listOf(LocalHistoryEntry(merged, watchedAtMs, entries.firstOrNull { it.video.id == video.id }?.watchedMs ?: 0L)) + entries.filter { it.video.id != video.id })
             .take(MAX_ENTRIES)
+        refreshTasteKey()
+        persistEntries()
+    }
+
+    /** Playback time, not seek position or a thumbnail tap, qualifies a recommendation seed. */
+    @Synchronized
+    fun recordViewing(videoId: String, elapsedMs: Long) {
+        val entry = entries.firstOrNull { it.video.id == videoId } ?: return
+        if (entry.watchedMs >= 30_000L) return
+        entries = entries.map { if (it.video.id == videoId) it.copy(watchedMs = (it.watchedMs + elapsedMs.coerceIn(0, 5_000)).coerceAtMost(30_000)) else it }
         refreshTasteKey()
         persistEntries()
     }
@@ -208,7 +221,8 @@ object LocalHistory {
         ) {
             return
         }
-        relatedCache[videoId] = related
+        if (relatedCache.size >= 50) relatedCache.keys.firstOrNull()?.let { relatedCache.remove(it) }
+        relatedCache[videoId] = related.take(60)
         relatedVersion++
     }
 
@@ -256,6 +270,7 @@ object LocalHistory {
                 dislikedIds = dislikedIds - video.id
             }
         }
+        refreshTasteKey()
         persistVideoList(KEY_LIKED, likedVideos)
         val arr = JSONArray().apply { dislikedIds.forEach { put(it) } }
         prefs?.edit()?.putString(KEY_DISLIKED, arr.toString())?.apply()
@@ -349,7 +364,7 @@ object LocalHistory {
         disk.execute {
             val array = JSONArray()
             snapshot.forEach { entry ->
-                array.put(entry.video.toJson().put("watchedAt", entry.watchedAtMs))
+                array.put(entry.video.toJson().put("watchedAt", entry.watchedAtMs).put("watchedMs", entry.watchedMs))
             }
             p.edit().putString(KEY_ENTRIES, array.toString()).apply()
         }

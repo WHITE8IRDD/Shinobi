@@ -12,6 +12,8 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.isActive
 
 /** Seeds derived from the user's recent watch history and search activity. */
 data class TasteSeeds(
@@ -268,306 +270,136 @@ class PersonalizedHomeState(private val scope: CoroutineScope) {
         private set
     var generation by mutableIntStateOf(0)
         private set
-
-    /** Bumped only by an explicit user refresh, so the list returns to the top when asked. */
     var refreshToken by mutableIntStateOf(0)
         private set
-
-    private var lastTasteKey: String = ""
-    private val shownIds = HashSet<String>()
-    private var nextRelatedToken: Pair<String, String>? = null
-    private var nextSearchToken: Pair<String, String>? = null
+    private var lastTasteKey: String? = null
     private var job: Job? = null
-    private var moreJob: Job? = null
-    /** Set when a page brought nothing new: stop paging until the next explicit refresh. */
+    private var sources = emptyList<HomeSource>()
     private var exhausted = false
+    val hasMore get() = !exhausted && videos.size < 240 && sources.any { it.next != null }
 
-    val hasMore: Boolean
-        get() = !exhausted && (nextRelatedToken != null || nextSearchToken != null)
+    private data class HomeSource(
+        val key: String,
+        val kind: RecommendationMixer.Kind,
+        val next: String? = null,
+    )
+    private data class Loaded(val source: HomeSource, val page: SearchPage)
 
-    /**
-     * Called by HomeScreen when the user's taste key (recent watches + searches) changes.
-     *
-     * Only that key starts a new load. Related-video caching no longer re-triggers one, and a
-     * key that is already loaded is ignored, so the feed cannot reload itself in a loop.
-     */
     fun syncWithTaste(tasteKey: String) {
-        if (!LocalHistory.hasTasteSignal) {
-            job?.cancel()
-            moreJob?.cancel()
-            videos = emptyList()
-            shorts = emptyList()
-            topics = emptyList()
-            selectedTopic = null
-            lastTasteKey = ""
-            exhausted = false
-            error = null
-            loading = false
-            return
-        }
-        if (tasteKey == lastTasteKey && (videos.isNotEmpty() || loading)) return
+        if (lastTasteKey == tasteKey && (videos.isNotEmpty() || loading)) return
         lastTasteKey = tasteKey
-        loadRecommendations(isRefresh = false)
+        refresh(explicit = false)
     }
 
     fun selectTopic(topic: String?) {
-        val normalized = topic?.takeIf { it != selectedTopic }
-        selectedTopic = normalized
-        loadRecommendations(isRefresh = false)
+        selectedTopic = topic?.takeIf { it != selectedTopic }
+        refresh()
     }
 
-    fun refresh() {
-        if (!LocalHistory.hasTasteSignal) return
-        refreshToken++
-        loadRecommendations(isRefresh = true)
-    }
+    fun refresh() = refresh(explicit = true)
 
-    private fun loadRecommendations(isRefresh: Boolean) {
-        // One load at a time: a second request for the same key replaces the one in flight
-        // instead of stacking a second (and a third) fetch on top of it.
+    private fun refresh(explicit: Boolean) {
         job?.cancel()
-        moreJob?.cancel()
+        if (explicit) refreshToken++
+        val history = RecommendationMixer.diverseSeeds(LocalHistory.entries.filter { it.watchedMs >= 5_000 }.map { it.video }, 3)
+        val likes = RecommendationMixer.diverseSeeds(LocalHistory.likedVideos.filter { liked -> history.none { it.id == liked.id } }, 2)
+        topics = TasteEngine.buildTasteSeeds(LocalHistory.entries, LocalHistory.recentQueries).topicPills
+        val topic = selectedTopic
+        val requested = if (topic != null) listOf(HomeSource(topic, RecommendationMixer.Kind.Search)) else buildList {
+            add(HomeSource("discovery", RecommendationMixer.Kind.Discovery))
+            history.forEach { add(HomeSource(it.id, RecommendationMixer.Kind.History)) }
+            likes.forEach { add(HomeSource(it.id, RecommendationMixer.Kind.Like)) }
+            // A like already present in history is moved into the bounded like bucket.
+            if (likes.isEmpty()) LocalHistory.likedVideos.firstOrNull()?.let { liked ->
+                removeAll { it.key == liked.id }
+                add(HomeSource(liked.id, RecommendationMixer.Kind.Like))
+            }
+            if (history.isEmpty()) LocalHistory.recentQueries.firstOrNull()?.let {
+                add(HomeSource(it, RecommendationMixer.Kind.Search))
+            }
+        }
         exhausted = false
-        val entries = LocalHistory.entries
-        val queries = LocalHistory.recentQueries
-        val seeds = TasteEngine.buildTasteSeeds(entries, queries)
-        topics = seeds.topicPills
-
-        val watchedIds = entries.mapTo(HashSet()) { it.video.id }
-        val dislikedIds = LocalHistory.dislikedIds
-
-        // Immediate pass from in-memory cached related items so returning from the player
-        // shows updated recommendations right away while deeper sources load.
-        if (!isRefresh && selectedTopic == null) {
-            val cachedSources = seeds.seedVideoIds.map { LocalHistory.cachedRelated(it) }.filter { it.isNotEmpty() }
-            if (cachedSources.isNotEmpty()) {
-                val immediate = TasteEngine.interleaveRecommendations(
-                    sources = cachedSources,
-                    watchedIds = watchedIds,
-                    dislikedIds = dislikedIds,
-                    preferredChannels = seeds.preferredChannels,
-                )
-                val (immVideos, immShorts) = TasteEngine.separateShortsAndVideos(immediate, emptyList(), watchedIds, dislikedIds)
-                if (immVideos.isNotEmpty()) videos = immVideos
-                if (immShorts.isNotEmpty() && shorts.isEmpty()) shorts = immShorts
-            }
-        }
-
-        loading = true
-        refreshing = isRefresh && videos.isNotEmpty()
-        error = null
-        job = scope.launch {
-            runCatching {
-                fetchTasteFeed(seeds, selectedTopic, watchedIds, dislikedIds, isRefresh)
-            }.onSuccess { result ->
-                videos = result.videos
-                if (result.shorts.isNotEmpty() || shorts.isEmpty()) {
-                    shorts = result.shorts
-                }
-                nextRelatedToken = result.nextRelated
-                nextSearchToken = result.nextSearch
-                result.videos.forEach { shownIds += it.id }
-                result.videos.take(2).forEach { StreamCache.prefetch(it.id) }
-                result.shorts.take(2).forEach { StreamCache.prefetch(it.id) }
-                generation++
-            }.onFailure { t ->
-                if (videos.isEmpty()) error = YouTube.friendlyError(t)
-            }
-            loading = false
-            refreshing = false
-        }
+        load(requested, append = false, topicOnly = topic != null)
     }
 
     fun loadMore() {
-        if (loading || moreJob?.isActive == true) return
-        val relToken = nextRelatedToken
-        val srchToken = nextSearchToken
-        if (relToken == null && srchToken == null) return
-        loading = true
-        moreJob = scope.launch {
-            runCatching {
-                coroutineScope {
-                    val relDeferred = relToken?.let { (vid, tok) ->
-                        async(Dispatchers.IO) { runCatching { InnerTube.related(vid, tok) }.getOrNull() }
-                    }
-                    val srchDeferred = srchToken?.let { (q, tok) ->
-                        async(Dispatchers.IO) { runCatching { InnerTube.searchPage(q, tok) }.getOrNull() }
-                    }
-                    val relPage = relDeferred?.await()
-                    val srchPage = srchDeferred?.await()
-                    nextRelatedToken = relPage?.next?.let { relToken.first to it }
-                    nextSearchToken = srchPage?.next?.let { srchToken.first to it }
-
-                    val watchedIds = LocalHistory.entries.mapTo(HashSet()) { it.video.id }
-                    val seen = videos.mapTo(HashSet()) { it.id }
-                    val moreCandidates = TasteEngine.interleaveRecommendations(
-                        sources = listOfNotNull(relPage?.videos, srchPage?.videos),
-                        watchedIds = watchedIds + seen,
-                        dislikedIds = LocalHistory.dislikedIds,
-                    )
-                    val (moreVideos, moreShorts) = TasteEngine.separateShortsAndVideos(
-                        moreCandidates,
-                        srchPage?.shorts.orEmpty(),
-                        watchedIds,
-                        LocalHistory.dislikedIds,
-                    )
-                    val before = videos.size + shorts.size
-                    if (moreVideos.isNotEmpty()) {
-                        videos = (videos + moreVideos).distinctBy { it.id }
-                        moreVideos.forEach { shownIds += it.id }
-                    }
-                    if (moreShorts.isNotEmpty()) {
-                        shorts = (shorts + moreShorts).distinctBy { it.id }
-                    }
-                    // A page that adds nothing means the feed is spent: without this the
-                    // footer could ask for the next page forever. A page that only repeated
-                    // what is already on screen counts as nothing.
-                    if (videos.size + shorts.size == before) exhausted = true
-                }
-            }
-            loading = false
-        }
+        if (loading || !hasMore || error != null) return
+        load(sources.filter { it.next != null }, append = true, topicOnly = selectedTopic != null)
     }
 
-    private class FetchResult(
-        val videos: List<VideoItem>,
-        val shorts: List<VideoItem>,
-        val nextRelated: Pair<String, String>?,
-        val nextSearch: Pair<String, String>?,
-    )
-
-    private suspend fun fetchTasteFeed(
-        seeds: TasteSeeds,
-        topic: String?,
-        watchedIds: Set<String>,
-        dislikedIds: Set<String>,
-        isRefresh: Boolean,
-    ): FetchResult = coroutineScope {
-        if (topic != null) {
-            val mainDeferred = async(Dispatchers.IO) {
-                runCatching { InnerTube.searchPage(topic) }.getOrNull()
+    private suspend fun fetch(source: HomeSource): Loaded {
+        val page = when (source.kind) {
+            RecommendationMixer.Kind.Discovery -> {
+                val discovery = InnerTube.discovery(source.next)
+                if (source.next == null && discovery.shorts.isEmpty()) {
+                    val extra = try { InnerTube.searchPage("#shorts") }
+                        catch (e: kotlinx.coroutines.CancellationException) { throw e }
+                        catch (_: Exception) { null }
+                    discovery.copy(shorts = extra?.shorts.orEmpty() + extra?.videos.orEmpty().filter { it.isShort })
+                } else discovery
             }
-            val shortsDeferred = async(Dispatchers.IO) {
-                runCatching { InnerTube.searchPage("$topic #shorts") }.getOrNull()
+            RecommendationMixer.Kind.Search -> InnerTube.searchPage(source.key, source.next)
+            else -> {
+                val page = InnerTube.related(source.key, source.next)
+                SearchPage(page.videos, page.videos.filter { it.isShort }, page.next)
             }
-            val fallbackDeferred = async(Dispatchers.IO) {
-                runCatching { YouTube.search(topic) }.getOrDefault(emptyList())
-            }
-            val mainPage = mainDeferred.await()
-            val shortsPage = shortsDeferred.await()
-            val fallback = if (mainPage == null || mainPage.videos.isEmpty()) fallbackDeferred.await() else emptyList()
-            val combined = TasteEngine.interleaveRecommendations(
-                sources = listOfNotNull(mainPage?.videos, fallback.takeIf { it.isNotEmpty() }),
-                watchedIds = watchedIds,
-                shownIds = if (isRefresh) shownIds else emptySet(),
-                dislikedIds = dislikedIds,
-                preferredChannels = seeds.preferredChannels,
-            )
-            val (vids, sh) = TasteEngine.separateShortsAndVideos(
-                combined,
-                mainPage?.shorts.orEmpty() + shortsPage?.shorts.orEmpty(),
-                watchedIds,
-                dislikedIds,
-            )
-            return@coroutineScope FetchResult(
-                videos = vids,
-                shorts = sh,
-                nextRelated = null,
-                nextSearch = mainPage?.next?.let { topic to it },
-            )
         }
+        // A repeated token is terminal, not a request loop.
+        return Loaded(source.copy(next = page.next?.takeUnless { it == source.next }), page)
+    }
 
-        // Gather Watch-Next related feeds for the top 3 recently watched videos in parallel.
-        val relatedDeferreds = seeds.seedVideoIds.take(3).map { videoId ->
-            async(Dispatchers.IO) {
-                val cached = LocalHistory.cachedRelated(videoId)
-                val remote = runCatching { InnerTube.related(videoId) }.getOrNull()
-                val items = when {
-                    remote != null && remote.videos.isNotEmpty() -> {
-                        LocalHistory.cacheRelated(videoId, remote.videos)
-                        remote.videos
-                    }
-                    cached.isNotEmpty() -> cached
-                    else -> runCatching { YouTube.details(videoId).related }.getOrDefault(emptyList()).also {
-                        if (it.isNotEmpty()) LocalHistory.cacheRelated(videoId, it)
-                    }
+    private fun load(requested: List<HomeSource>, append: Boolean, topicOnly: Boolean) {
+        loading = true
+        refreshing = !append && videos.isNotEmpty()
+        error = null
+        // Snapshot exclusions once, not while ranking on the UI thread.
+        val excluded = LocalHistory.dislikedIds + LocalHistory.entries.map { it.video.id } +
+            if (append) videos.map { it.id } + shorts.map { it.id } else emptyList()
+        job = scope.launch {
+            try {
+                val loaded = coroutineScope {
+                    requested.map { source -> async(Dispatchers.IO) {
+                        try { fetch(source) } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+                        catch (_: Exception) { null }
+                    } }.awaitAll().filterNotNull()
                 }
-                Triple(videoId, items, remote?.next)
-            }
-        }
-
-        // Gather search-based style expansion for the top 2 taste queries in parallel.
-        val activeQueries = seeds.tasteQueries.take(2)
-        val searchDeferreds = activeQueries.map { q ->
-            async(Dispatchers.IO) {
-                val page = runCatching { InnerTube.searchPage(q) }.getOrNull()
-                val videos = if (page != null && page.videos.isNotEmpty()) {
-                    page.videos
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (loaded.isEmpty()) throw java.io.IOException(Loc.t("Couldn't reach YouTube"))
+                val ranked = kotlinx.coroutines.withContext(Dispatchers.Default) {
+                    fun rank(short: Boolean): List<VideoItem> {
+                        val inputs = loaded.map { (src, page) ->
+                            val items = if (short) page.shorts + page.videos.filter { it.isShort } else page.videos.filterNot { it.isShort }
+                            RecommendationMixer.Source(src.key, src.kind, items)
+                        }
+                        return if (topicOnly) inputs.flatMap { it.videos }.filter { it.id !in excluded }.distinctBy { it.id }.take(30)
+                        else RecommendationMixer.mix(inputs, excluded)
+                    }
+                    rank(false) to rank(true)
+                }
+                sources = loaded.map { it.source }
+                if (append) {
+                    videos = (videos + ranked.first).distinctBy { it.id }.take(240)
+                    shorts = (shorts + ranked.second).distinctBy { it.id }.take(60)
                 } else {
-                    runCatching { YouTube.search(q) }.getOrDefault(emptyList())
+                    videos = ranked.first
+                    shorts = ranked.second
                 }
-                Triple(q, SearchPage(videos, page?.shorts.orEmpty(), page?.next), page?.next)
+                exhausted = ranked.first.isEmpty() && ranked.second.isEmpty()
+                if (videos.isEmpty() && shorts.isEmpty()) error = Loc.t("No suggestions available. Try again later.")
+                generation++
+                // No speculative stream extraction for every feed refresh: it competes with playback.
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                error = YouTube.friendlyError(e)
+            } finally {
+                // A cancelled older request must never clear a newer request's loading flag.
+                if (kotlinx.coroutines.currentCoroutineContext().isActive) {
+                    loading = false
+                    refreshing = false
+                }
             }
         }
-
-        // Dedicated Shorts query in the style of the user's latest taste so the Shorts shelf
-        // is always populated even when Watch-Next only returns long-form videos.
-        val primaryTasteQuery = activeQueries.firstOrNull() ?: LocalHistory.entries.firstOrNull()?.video?.let(TasteEngine::extractTasteQuery).orEmpty()
-        val shortsQueryDeferred = if (primaryTasteQuery.isNotBlank()) {
-            async(Dispatchers.IO) {
-                runCatching { InnerTube.searchPage("$primaryTasteQuery #shorts") }.getOrNull()
-            }
-        } else null
-
-        val relatedResults = relatedDeferreds.awaitAll()
-        val searchResults = searchDeferreds.awaitAll()
-        val extraShortsPage = shortsQueryDeferred?.await()
-
-        // Order sources so the newest watched video / newest search leads.
-        val sources = mutableListOf<List<VideoItem>>()
-        val maxLen = maxOf(relatedResults.size, searchResults.size)
-        for (i in 0 until maxLen) {
-            relatedResults.getOrNull(i)?.second?.takeIf { it.isNotEmpty() }?.let(sources::add)
-            searchResults.getOrNull(i)?.second?.videos?.takeIf { it.isNotEmpty() }?.let(sources::add)
-        }
-
-        val allExplicitShorts = buildList {
-            searchResults.forEach { addAll(it.second.shorts) }
-            if (extraShortsPage != null) {
-                addAll(extraShortsPage.shorts)
-                addAll(extraShortsPage.videos.filter { it.isShort || it.durationSec in 1..60 })
-            }
-        }
-
-        val interleaved = TasteEngine.interleaveRecommendations(
-            sources = sources,
-            watchedIds = watchedIds,
-            shownIds = if (isRefresh) shownIds else emptySet(),
-            dislikedIds = dislikedIds,
-            preferredChannels = seeds.preferredChannels,
-            limit = 45,
-        )
-
-        val (finalVideos, finalShorts) = TasteEngine.separateShortsAndVideos(
-            candidates = interleaved,
-            explicitShorts = allExplicitShorts,
-            watchedIds = watchedIds,
-            dislikedIds = dislikedIds,
-        )
-
-        val nextRel = relatedResults.firstNotNullOfOrNull { (vid, _, next) -> next?.let { vid to it } }
-        val nextSrch = searchResults.firstNotNullOfOrNull { (q, _, next) -> next?.let { q to it } }
-
-        if (finalVideos.isEmpty() && finalShorts.isEmpty()) {
-            throw java.io.IOException(Loc.t("Couldn't reach YouTube"))
-        }
-
-        FetchResult(
-            videos = finalVideos,
-            shorts = finalShorts,
-            nextRelated = nextRel,
-            nextSearch = nextSrch,
-        )
     }
 }
 

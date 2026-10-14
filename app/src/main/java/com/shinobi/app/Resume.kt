@@ -71,6 +71,7 @@ class ResumeSaver(private val player: Player) : Player.Listener {
     private var lastId: String? = null
     private val tick = object : Runnable {
         override fun run() {
+            if (player.isPlaying) player.currentMediaItem?.mediaId?.let { LocalHistory.recordViewing(it, 5_000) }
             saveNow()
             if (player.isPlaying) handler.postDelayed(this, 5_000)
         }

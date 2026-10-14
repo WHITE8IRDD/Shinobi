@@ -421,6 +421,7 @@ private fun ShortShelfCard(short: VideoItem, onClick: () -> Unit) {
         ) {
             Text(
                 short.title,
+                style = androidx.compose.ui.text.TextStyle(textDirection = androidx.compose.ui.text.style.TextDirection.Content),
                 color = Color.White,
                 fontWeight = FontWeight.Bold,
                 fontSize = 13.sp,
@@ -1088,7 +1089,7 @@ private fun ShortPageContent(
             if (metaParts.isNotEmpty()) {
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    metaParts.joinToString(" · "),
+                    BidiText.join(metaParts, rtl = Loc.isRtl),
                     color = Color.White.copy(alpha = 0.72f),
                     fontSize = 12.sp,
                     fontWeight = FontWeight.SemiBold,

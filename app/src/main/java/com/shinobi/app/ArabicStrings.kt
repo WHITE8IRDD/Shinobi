@@ -11,6 +11,13 @@ package com.shinobi.app
  */
 internal val ARABIC_STRINGS: Map<String, String> = mapOf(
     // ── Shell, navigation, shared actions ──────────────────────────────────────
+    "Trending" to "المحتوى الرائج",
+    "Trending on YouTube" to "المحتوى الرائج على YouTube",
+    "Trending unavailable" to "المحتوى الرائج غير متاح",
+    "Country" to "البلد",
+    "Choose country" to "اختيار البلد",
+    "YouTube has no trending chart for this country right now." to "لا تتوفّر قائمة للمحتوى الرائج على YouTube في هذا البلد حاليًا.",
+    "No suggestions available. Try again later." to "لا تتوفّر اقتراحات حاليًا. يُرجى المحاولة لاحقًا.",
     "Home" to "الرئيسية",
     "Search" to "البحث",
     "Library" to "المكتبة",

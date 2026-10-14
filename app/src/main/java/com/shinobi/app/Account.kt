@@ -199,7 +199,7 @@ object InnerTube {
     internal fun postAny(endpoint: String, body: JSONObject): JSONObject =
         if (Account.signedIn) post(endpoint, body) else post(endpoint, body, anonymous = true)
 
-    internal fun post(endpoint: String, body: JSONObject, anonymous: Boolean = false): JSONObject {
+    internal fun post(endpoint: String, body: JSONObject, anonymous: Boolean = false, country: String = "US"): JSONObject {
         val auth = if (anonymous) null else Account.authorization() ?: throw NotSignedInException()
         body.put(
             "context",
@@ -208,8 +208,8 @@ object InnerTube {
                 JSONObject()
                     .put("clientName", "WEB")
                     .put("clientVersion", Account.clientVersion())
-                    .put("hl", "en")
-                    .put("gl", "US")
+                    .put("hl", Loc.language)
+                    .put("gl", country)
                     .apply { Account.visitorData()?.let { put("visitorData", it) } },
             ),
         )
@@ -243,6 +243,36 @@ object InnerTube {
     }
 
     suspend fun home(next: String? = null) = browse("FEwhat_to_watch", next)
+
+    /** YouTube's own home ranking, enriched locally rather than replaced by title searches. */
+    suspend fun discovery(next: String? = null): SearchPage = withContext(Dispatchers.IO) {
+        val body = if (next == null) JSONObject().put("browseId", "FEwhat_to_watch") else JSONObject().put("continuation", next)
+        val root = postAny("browse", body)
+        val feed = parseFeed(root)
+        if (next == null && feed.videos.isEmpty()) {
+            // Anonymous Home can be empty without a watch cookie. Use a real public chart,
+            // not search results labelled as YouTube recommendations.
+            val trending = trending(AppSettings.trendingCountry)
+            SearchPage(trending.videos, trending.videos.filter { it.isShort }, null)
+        } else SearchPage(feed.videos, parseShorts(root), feed.next)
+    }
+
+    /** Public regional chart. No account cookies: country must not be overridden by a session. */
+    suspend fun trending(country: String): FeedPage = withContext(Dispatchers.IO) {
+        require(country in java.util.Locale.getISOCountries())
+        val root = post("browse", JSONObject().put("browseId", "FEtrending")
+            .put("params", "4gIOGgxtb3N0X3BvcHVsYXI%3D"), anonymous = true, country = country)
+        parseTrending(root)
+    }
+
+    internal fun parseTrending(root: JSONObject): FeedPage {
+        val tabs = root.optJSONObject("contents")?.optJSONObject("twoColumnBrowseResultsRenderer")?.optJSONArray("tabs")
+        val selected = (0 until (tabs?.length() ?: 0)).mapNotNull { tabs?.optJSONObject(it)?.optJSONObject("tabRenderer") }
+            .firstOrNull { it.optBoolean("selected") }?.optJSONObject("content")
+        // Do not accidentally traverse unselected tabs, account menus or unrelated sidebars.
+        val page = parseFeed(selected ?: root.optJSONObject("contents") ?: JSONObject())
+        return FeedPage(page.videos, null) // Trending is a finite chart, not a personalized continuation.
+    }
 
     /** A channel's uploads (Videos tab), members-only ones filtered out like everywhere else. */
     suspend fun channelVideos(channelId: String, continuation: String? = null): FeedPage = withContext(Dispatchers.IO) {
