@@ -77,6 +77,9 @@ jobs:
           fi
           echo "Generated branding assets match branding/source/shinobi-mark.svg."
 
+      - name: Public YouTube route diagnostics (no account cookies)
+        run: python3 .github/scripts/probe_discovery.py
+
       - name: Unit tests
         run: |
           set -o pipefail

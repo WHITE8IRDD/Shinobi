@@ -19,4 +19,11 @@ class TrendingTest {
         assertEquals(listOf("abcdefghijk"), page.videos.map { it.id })
         assertNull(page.next)
     }
+    @Test fun mobileClientSelectedChartIsParsed() {
+        val root = JSONObject("""{"contents":{"singleColumnBrowseResultsRenderer":{"tabs":[
+          {"tabRenderer":{"selected":true,"content":{"videoRenderer":{"videoId":"abcdefghijk","title":{"simpleText":"Regional chart"}}}}}
+        ]}}}""")
+        assertEquals("abcdefghijk", InnerTube.parseTrending(root).videos.single().id)
+    }
+
 }

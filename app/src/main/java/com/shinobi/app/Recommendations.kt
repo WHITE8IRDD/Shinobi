@@ -289,7 +289,7 @@ class PersonalizedHomeState(
     private data class Loaded(val source: HomeSource, val page: SearchPage)
 
     fun syncWithTaste(tasteKey: String) {
-        if (lastTasteKey == tasteKey && (videos.isNotEmpty() || loading)) return
+        if (lastTasteKey == tasteKey && (videos.isNotEmpty() || shorts.isNotEmpty() || loading)) return
         lastTasteKey = tasteKey
         refresh(explicit = false)
     }

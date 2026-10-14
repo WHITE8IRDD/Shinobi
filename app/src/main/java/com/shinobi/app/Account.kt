@@ -217,7 +217,7 @@ object InnerTube {
         return Request.Builder()
             .url("$BASE$endpoint?prettyPrint=false")
             .post(body.toString().toRequestBody(JSON_TYPE))
-            .header("User-Agent", Net.USER_AGENT)
+            .header("User-Agent", if (mobile) "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36" else Net.USER_AGENT)
             .apply { if (auth != null) { header("Cookie", Account.cookieHeader()); header("Authorization", auth) } }
             .header("Origin", Account.ORIGIN)
             .header("X-Origin", Account.ORIGIN)
@@ -296,7 +296,7 @@ object InnerTube {
             catch (e: kotlinx.coroutines.CancellationException) { throw e }
             catch (e: Exception) { if (next != null) throw e else null }
         val feed = root?.let(::parseFeed)
-        if (feed != null && feed.videos.isNotEmpty()) return@withContext SearchPage(feed.videos, parseShorts(root), feed.next)
+        if (root != null && feed != null && feed.videos.isNotEmpty()) return@withContext SearchPage(feed.videos, parseShorts(root), feed.next)
         if (next != null) return@withContext SearchPage(emptyList(), emptyList(), null)
         // Do not make anonymous Home depend on a retired or country-restricted Trending chart.
         discoverySearches(0)
@@ -306,7 +306,8 @@ object InnerTube {
     private val discoveryTopics = listOf("science technology", "music live", "cooking recipes", "travel nature", "gaming", "arts culture")
 
     private suspend fun discoverySearches(page: Int): SearchPage = kotlinx.coroutines.supervisorScope {
-        val queries = discoveryTopics.drop(page * 3).take(3)
+        val topics = if (Loc.isArabic) listOf("علوم وتكنولوجيا", "موسيقى مباشرة", "طبخ وصفات", "سفر وطبيعة", "ألعاب فيديو", "فنون وثقافة") else discoveryTopics
+        val queries = topics.drop(page.coerceIn(0, 2) * 3).take(3)
         if (queries.isEmpty()) return@supervisorScope SearchPage(emptyList(), emptyList(), null)
         val results = queries.map { query -> async {
             try { Result.success(searchPage(query)) }
