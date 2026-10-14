@@ -239,6 +239,11 @@ jobs:
             set -euo pipefail
             # "draft-1" becomes "Draft 1"; a version tag names the product and its version,
             # so v1.0 publishes as "SHINOBI 1.0" with Shinobi-1.0-*.apk beside it.
+            # The notes file's H1, when present, is the release name — one place to keep
+            # docs/releases/<tag>.md and the published title in agreement.
+            if [[ -z "$NAME" && -f "docs/releases/$TAG.md" ]]; then
+              NAME=$(head -n 1 "docs/releases/$TAG.md" | sed -E 's/^#[[:space:]]*//;s/[[:space:]]+$//')
+            fi
             if [[ -z "$NAME" ]]; then
               if [[ "$TAG" =~ ^[vV][0-9] ]]; then
                 NAME="SHINOBI ${TAG#[vV]}"
