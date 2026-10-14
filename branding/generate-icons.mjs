@@ -449,5 +449,17 @@ if (markRadius < SAFE_RADIUS * 0.85) {
 }
 if (SPLASH_RADIUS > 96) throw new Error('splash emblem would be clipped by the 192 dp visible circle');
 
+// Regression-only: verify the serialized transforms (the actual Android precision), not
+// just the ideal floating-point placement. No paths or placement rules are changed.
+for (const [canvas, radius] of [[108, MASK_RADIUS * SAFETY], [24, 12], [288, SPLASH_RADIUS]]) {
+  const p = placement({ canvas, radius });
+  const scale = Number(p.s.toFixed(6));
+  const center = [Number(p.tx.toFixed(3)) + circle.c[0] * scale,
+    Number(p.ty.toFixed(3)) + circle.c[1] * scale];
+  if (center.some(value => Math.abs(value - canvas / 2) > 0.001)) {
+    throw new Error(`mark center drifted on ${canvas} dp canvas: ${center}`);
+  }
+}
+
 console.log('\nmark enclosing circle: centre', circle.c.map((v) => v.toFixed(1)).join(', '), 'radius', circle.r.toFixed(2));
 console.log('adaptive scale', adaptive.s.toFixed(6), '-> mark radius', (circle.r * adaptive.s).toFixed(2), 'dp of', MASK_RADIUS, 'dp mask');

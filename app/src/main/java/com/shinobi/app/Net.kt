@@ -23,6 +23,34 @@ object Net {
             .build()
     }
 
+    // Separate deadlines for small API calls; do not impose these on media streams.
+    val apiClient: OkHttpClient by lazy {
+        client.newBuilder().connectTimeout(4, TimeUnit.SECONDS)
+            .readTimeout(6, TimeUnit.SECONDS).callTimeout(8, TimeUnit.SECONDS).build()
+    }
+    val suggestionClient: OkHttpClient by lazy {
+        apiClient.newBuilder().callTimeout(3, TimeUnit.SECONDS).build()
+    }
+    private var connectivity: android.net.ConnectivityManager? = null
+
+    fun init(context: android.content.Context) {
+        connectivity = context.getSystemService(android.net.ConnectivityManager::class.java)
+    }
+
+    /** A missing validation probe is NOT proof of no internet (VPNs often block it). */
+    fun connectionState(): ConnectionState {
+        val manager = connectivity ?: return ConnectionState.Unknown
+        return try {
+            val network = manager.activeNetwork ?: return ConnectionState.Offline
+            val caps = manager.getNetworkCapabilities(network) ?: return ConnectionState.Unknown
+            when {
+                caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_CAPTIVE_PORTAL) -> ConnectionState.CaptivePortal
+                caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_VALIDATED) -> ConnectionState.Online
+                else -> ConnectionState.Unvalidated
+            }
+        } catch (_: SecurityException) { ConnectionState.Unknown }
+    }
+
     /** The video-server host YouTube last handed out; usually the same one next time. */
     @Volatile private var mediaHost: String? = null
 

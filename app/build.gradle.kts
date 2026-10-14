@@ -12,9 +12,10 @@ android {
         applicationId = "com.shinobi.app"
         minSdk = 26
         targetSdk = 36
-        // SHINOBI 1.3 — balanced discovery, smart search and regional trending.
-        versionCode = 7
-        versionName = "1.3"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        // SHINOBI 1.4 — resilient reads and layout regression fixes.
+        versionCode = 8
+        versionName = "1.4"
     }
 
     buildTypes {
@@ -88,6 +89,16 @@ dependencies {
 
     // Parser tests use real, checked-in YouTube response fixtures.
     testImplementation("junit:junit:4.13.2")
+    testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
     testImplementation("org.json:json:20240303")
+}
+
+// Device-side regression checks for narrow screens and large text.
+dependencies {
+    androidTestImplementation(platform("androidx.compose:compose-bom:2024.09.03"))
+    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
 }

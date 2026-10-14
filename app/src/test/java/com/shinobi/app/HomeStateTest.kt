@@ -60,4 +60,35 @@ class HomeStateTest {
         assertNull(state.error)
         assertEquals("recovered", state.videos.single().id)
     }
+    @Test fun emptyContinuationEndsNormallyInsteadOfShowingServiceError() = runTest {
+        val state = PersonalizedHomeState(this) { request ->
+            if (request.next == null) SearchPage(listOf(video("one")), emptyList(), "next")
+            else SearchPage(emptyList(), emptyList(), null)
+        }
+        state.selectTopic("topic")
+        coroutineContext[Job]!!.children.toList().forEach { it.join() }
+        state.loadMore()
+        coroutineContext[Job]!!.children.toList().forEach { it.join() }
+        assertNull(state.error)
+        assertFalse(state.hasMore)
+        assertEquals(listOf("one"), state.videos.map { it.id })
+    }
+
+    @Test fun failedRefreshKeepsVisibleCardsAndPreservesServiceError() = runTest {
+        var fail = false
+        val state = PersonalizedHomeState(this) {
+            if (fail) throw HttpFailure(429)
+            SearchPage(listOf(video("one")), emptyList(), null)
+        }
+        state.selectTopic("topic")
+        coroutineContext[Job]!!.children.toList().forEach { it.join() }
+        fail = true
+        state.refresh()
+        coroutineContext[Job]!!.children.toList().forEach { it.join() }
+        assertEquals(listOf("one"), state.videos.map { it.id })
+        assertTrue(state.error.orEmpty().contains("rate-limiting"))
+        assertFalse(state.loading)
+        assertFalse(state.refreshing)
+    }
+
 }

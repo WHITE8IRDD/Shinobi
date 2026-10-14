@@ -316,6 +316,13 @@ internal val ARABIC_STRINGS: Map<String, String> = mapOf(
     "non-music" to "خارج الموسيقى",
     "filler" to "حشو",
 
+    "No internet connection. Connect to Wi-Fi or mobile data and try again." to "لا يوجد اتصال بالإنترنت. اتصل بشبكة واي فاي أو بيانات الهاتف ثم أعد المحاولة.",
+    "This Wi-Fi network requires sign-in. Sign in to the network and try again." to "تتطلب شبكة واي فاي تسجيل الدخول. سجّل الدخول إلى الشبكة ثم أعد المحاولة.",
+    "YouTube rejected this request. Try again or sign in again." to "رفض يوتيوب هذا الطلب. أعد المحاولة أو سجّل الدخول مجددًا.",
+    "YouTube took too long to respond. Please try again." to "استغرق يوتيوب وقتًا طويلًا للرد. يرجى إعادة المحاولة.",
+    "YouTube has no suggestions available right now. Please try again." to "لا تتوفر اقتراحات من يوتيوب حاليًا. يرجى إعادة المحاولة.",
+    "YouTube is temporarily unavailable. Please try again." to "يوتيوب غير متاح مؤقتًا. يرجى إعادة المحاولة.",
+
     // Counts and units
     "views" to "مشاهدة",
     "subscribers" to "مشترك",

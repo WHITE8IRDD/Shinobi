@@ -12,11 +12,16 @@ import kotlin.coroutines.resumeWithException
 /** One small request after typing settles; cancellation also closes the underlying socket. */
 object SuggestionApi {
     suspend fun fetch(query: String, language: String): List<String> {
-        val url = "https://suggestqueries.google.com/complete/search".toHttpUrl().newBuilder()
-            .addQueryParameter("client", "firefox").addQueryParameter("ds", "yt")
-            .addQueryParameter("hl", language).addQueryParameter("q", query).build()
-        val text = Net.client.newCall(Request.Builder().url(url).build()).awaitText()
-        return withContext(Dispatchers.Default) { parse(text) }
+        return ReadRecovery.run(attempts = 2) { attempt ->
+            val host = if (attempt == 0) "suggestqueries.google.com" else "clients1.google.com"
+            val url = "https://$host/complete/search".toHttpUrl().newBuilder()
+                .addQueryParameter("client", "firefox").addQueryParameter("ds", "yt")
+                .addQueryParameter("hl", language).addQueryParameter("q", query).build()
+            val text = Net.suggestionClient.newCall(Request.Builder().url(url).build()).awaitText()
+            withContext(Dispatchers.Default) {
+                try { parse(text) } catch (e: org.json.JSONException) { throw ServiceResponseException(e) }
+            }
+        }
     }
 
     internal fun parse(text: String): List<String> {
@@ -39,7 +44,7 @@ internal suspend fun okhttp3.Call.awaitText(onHeaders: (okhttp3.Response) -> Uni
             try {
                 val text = response.use {
                     onHeaders(it)
-                    if (!it.isSuccessful) throw IOException("YouTube returned ${it.code}")
+                    if (!it.isSuccessful) throw HttpFailure(it.code, it.header("Retry-After")?.toLongOrNull()?.coerceIn(0, 60)?.times(1000))
                     it.body?.string().orEmpty()
                 }
                 if (continuation.isActive) continuation.resume(text)

@@ -271,7 +271,8 @@ object YouTube {
                 Loc.t("This is a members-only video. Shinobi can't play members-only videos yet.")
             else Loc.t("This video isn't available.")
         is ReCaptchaException -> Loc.t("YouTube is rate-limiting requests right now. Try again in a minute.")
-        is IOException -> Loc.t("Couldn't reach YouTube. Check your connection.")
+        is NotSignedInException -> Loc.t("You're signed out.")
+        is IOException -> Loc.t(ReadRecovery.message(t, Net.connectionState()))
         else -> Loc.t("Something went wrong loading this. Try again.")
     }
 }
