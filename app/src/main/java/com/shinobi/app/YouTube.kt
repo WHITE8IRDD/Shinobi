@@ -52,6 +52,8 @@ data class VideoItem(
     val views: Long,
     val uploaded: String?,
     val isShort: Boolean = false,
+    /** YouTube flagged this as age-restricted/mature; see [SensitiveFilter]. */
+    val sensitive: Boolean = false,
 )
 
 @Immutable
@@ -183,6 +185,8 @@ object YouTube {
                 views = info.viewCount,
                 uploaded = uploadedText(info.textualUploadDate, info.uploadDate),
                 isShort = isShort,
+                // The extractor's own age rating is the accurate signal — no guessing.
+                sensitive = info.ageLimit >= SensitiveFilter.AGE_LIMIT,
             ),
             description = info.description?.let { d ->
                 if (d.type == Description.HTML) HtmlCompat.fromHtml(d.content, HtmlCompat.FROM_HTML_MODE_COMPACT).toString().trim()
@@ -320,8 +324,20 @@ object YouTube {
  */
 object StreamCache {
     private const val MAX_AGE_MS = 4 * 60 * 60 * 1000L
+    /** Bounded on purpose: each entry holds every stream of one video; old ones expire anyway. */
+    private const val MAX_ENTRIES = 16
     private class Entry(val info: StreamInfo, val loadedAt: Long)
     private val entries = ConcurrentHashMap<String, Entry>()
+
+    private fun put(id: String, info: StreamInfo) {
+        entries[id] = Entry(info, System.currentTimeMillis())
+        // Drop the oldest extractions first — a 2–3 GB phone must not accumulate them.
+        while (entries.size > MAX_ENTRIES) {
+            val oldest = entries.entries.minByOrNull { it.value.loadedAt }?.key ?: break
+            if (oldest == id) break
+            entries.remove(oldest)
+        }
+    }
 
     /**
      * Stream URLs are signed for the network they were fetched on and expire; a stale one
@@ -345,7 +361,7 @@ object StreamCache {
         get(id)?.let { return it }
         val mine = FutureTask {
             StreamInfo.getInfo(ServiceList.YouTube, YouTube.watchUrl(id)).also {
-                entries[id] = Entry(it, System.currentTimeMillis())
+                put(id, it)
                 Net.noteMediaHost(StreamSelection.pick(it).let { p -> (p.video ?: p.muxed)?.content })
             }
         }
@@ -404,6 +420,21 @@ object StreamSelection {
         val playedHeight: Int? get() = (if (usesSeparate) video?.height else muxed?.height)?.takeIf { it > 0 }
     }
 
+    /** The device-decoder gate: a rung only counts if this phone can play it (see DeviceCodec). */
+    private fun decodable(stream: VideoStream): Boolean = DeviceCodec.canDecode(
+        DeviceCodec.mimeOf(stream.codec, stream.format == MediaFormat.WEBM),
+        stream.width,
+        stream.height,
+        stream.fps.takeIf { it > 0 } ?: 30,
+    )
+
+    private fun hardwareRung(stream: VideoStream): Boolean = DeviceCodec.hardwareAccelerated(
+        DeviceCodec.mimeOf(stream.codec, stream.format == MediaFormat.WEBM),
+        stream.width,
+        stream.height,
+        stream.fps.takeIf { it > 0 } ?: 30,
+    )
+
     fun pick(info: StreamInfo): Picked {
         // H.264 first: every device decodes it in hardware. VP9 next, anything else last.
         fun formatRank(format: MediaFormat?) = when (format) {
@@ -411,15 +442,19 @@ object StreamSelection {
             MediaFormat.WEBM -> 1
             else -> 2
         }
-        val candidates = info.videoOnlyStreams
+        val offered = info.videoOnlyStreams
             .filter { it.isUrl && it.deliveryMethod == DeliveryMethod.PROGRESSIVE_HTTP && it.height > 0 }
+        // Only rungs the phone can actually decode; if the probe knows nothing, play anything.
+        val candidates = offered.filter(::decodable).ifEmpty { offered }
         val chosen = QualityPreference.height
         // A chosen height plays exactly if offered, else the nearest below it. Auto caps at 1080p.
         val ceiling = chosen ?: MAX_HEIGHT
         val video = (candidates.filter { it.height <= ceiling }.ifEmpty { candidates })
             .sortedWith(
                 compareBy<VideoStream> { if (it.height <= ceiling) ceiling - it.height else it.height }
-                    .thenBy { formatRank(it.format) },
+                    .thenBy { if (hardwareRung(it)) 0 else 1 }
+                    .thenBy { formatRank(it.format) }
+                    .thenByDescending { it.fps },
             )
             .firstOrNull()
         // The original language is preferred, but ANY audio track beats none: with no
@@ -441,21 +476,34 @@ object StreamSelection {
 
     /**
      * The Auto ladder: one codec family (H.264 if offered, else VP9 — the player won't
-     * switch between codecs), one stream per height (highest frame rate wins), up to 1080p.
-     * Played as a single adaptive DASH set, so playback starts at whatever the connection
-     * can sustain immediately and climbs, like YouTube.
+     * switch between codecs), one stream per height (highest frame rate wins), up to 1080p,
+     * and only rungs this phone decodes in hardware. Played as a single adaptive DASH set,
+     * so playback starts at whatever the connection can sustain immediately and climbs,
+     * like YouTube.
      */
     fun autoLadder(info: StreamInfo): List<VideoStream> {
-        val usable = info.videoOnlyStreams.filter { it.isUrl && it.deliveryMethod == DeliveryMethod.PROGRESSIVE_HTTP && it.height in 1..MAX_HEIGHT && it.itagItem != null }
+        val usable = info.videoOnlyStreams.filter {
+            it.isUrl && it.deliveryMethod == DeliveryMethod.PROGRESSIVE_HTTP && it.height in 1..MAX_HEIGHT &&
+                it.itagItem != null && hardwareRung(it)
+        }
         val family = usable.filter { it.codec?.startsWith("avc") == true }.ifEmpty { usable.filter { it.format == MediaFormat.WEBM } }
         return family.groupBy { it.height }
             .map { (_, sameHeight) -> sameHeight.maxBy { it.fps * 100_000L + it.bitrate } }
             .sortedBy { it.height }
     }
 
-    fun heights(info: StreamInfo): List<Int> = info.videoOnlyStreams
-        .filter { it.isUrl && it.deliveryMethod == DeliveryMethod.PROGRESSIVE_HTTP && it.height > 0 }
-        .map { it.height }
-        .distinct()
-        .sortedDescending()
+    /**
+     * What the quality sheet offers: the heights with a hardware-decodable rung, so every
+     * listed quality applies instantly on this phone (software-only rungs are hidden rather
+     * than offered and then lag).
+     */
+    fun heights(info: StreamInfo): List<Int> {
+        val offered = info.videoOnlyStreams
+            .filter { it.isUrl && it.deliveryMethod == DeliveryMethod.PROGRESSIVE_HTTP && it.height > 0 }
+        val hardware = offered.filter(::hardwareRung)
+        return hardware.ifEmpty { offered.filter(::decodable) }
+            .map { it.height }
+            .distinct()
+            .sortedDescending()
+    }
 }

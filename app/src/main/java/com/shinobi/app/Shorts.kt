@@ -6,6 +6,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -17,6 +18,7 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -87,6 +89,7 @@ import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
@@ -389,7 +392,7 @@ private fun ShortShelfCard(short: VideoItem, onClick: () -> Unit) {
             .background(c.surfaceContainerHighest)
             .border(1.dp, c.outlineVariant.copy(alpha = 0.22f), shape),
     ) {
-        Thumbnail(thumbUrl, Modifier.fillMaxSize(), radius = 22)
+        Thumbnail(thumbUrl, Modifier.fillMaxSize(), radius = 22, blur = SensitiveFilter.shouldBlur(short))
         // Bottom gradient scrim so title and view count stay readable over any frame.
         Box(
             Modifier
@@ -879,7 +882,7 @@ private fun ShortPageContent(
             },
     ) {
         val thumbUrl = item.thumbnail ?: "https://i.ytimg.com/vi/${item.id}/oar2.jpg"
-        Thumbnail(thumbUrl, Modifier.fillMaxSize(), radius = 0)
+        Thumbnail(thumbUrl, Modifier.fillMaxSize(), radius = 0, blur = SensitiveFilter.shouldBlur(resolvedItem))
 
         if (isActivePage && !AudioOnly.enabled) {
             val aspect = player.videoAspect.takeIf { it > 0f } ?: (9f / 16f)
@@ -1099,9 +1102,9 @@ private fun ShortPageContent(
 
         }
 
-        // Bottom thin progress bar: the ticking position is read inside its own leaf, so
-        // a playing Short never recomposes this whole page.
-        ShortProgressBar(player, isActivePage, Modifier.align(Alignment.BottomStart))
+        // Bottom seek line: the ticking position is read inside its own leaf, so
+        // a playing Short never recomposes this whole page. Drag it to scrub.
+        ShortSeekBar(player, isActivePage, Modifier.align(Alignment.BottomStart))
     }
 }
 
@@ -1147,29 +1150,87 @@ private fun ShortActionItem(
 }
 
 /**
- * The thin progress line under a playing Short. Reading the ticking position in here keeps the
- * page around it out of the per-tick recomposition while the video runs.
+ * The seek line under a Short: a thin progress bar at the very bottom with drag-to-scrub,
+ * like YouTube Shorts. The drag strip is the slim band along the bottom edge only, so it never
+ * overlaps the action rail, the title block or the tap/double-tap/long-press gestures on the
+ * video, and a vertical swipe still turns the page. While scrubbing, a small time chip rides
+ * the finger ("0:07 / 0:45"). Reading the ticking position in here keeps the page around it
+ * out of the per-tick recomposition while the video runs.
  */
 @Composable
-private fun BoxScope.ShortProgressBar(player: PlayerState, isActivePage: Boolean, modifier: Modifier = Modifier) {
+private fun BoxScope.ShortSeekBar(player: PlayerState, isActivePage: Boolean, modifier: Modifier = Modifier) {
     if (!isActivePage || player.durationMs <= 0) return
     val c = MaterialTheme.colorScheme
+    val duration = player.durationMs
+    var dragFraction by remember { mutableStateOf<Float?>(null) }
     val progress by animateFloatAsState(
-        targetValue = (player.positionMs.toFloat() / player.durationMs).coerceIn(0f, 1f),
-        animationSpec = tween(150),
+        targetValue = dragFraction ?: (player.positionMs.toFloat() / duration).coerceIn(0f, 1f),
+        animationSpec = if (dragFraction != null) snap() else tween(150),
         label = "shortProgress",
     )
-    Box(
-        modifier
-            .fillMaxWidth()
-            .height(3.dp)
-            .background(Color.White.copy(alpha = 0.24f)),
-    ) {
+    val dragging = dragFraction != null
+    Box(modifier.fillMaxWidth().height(22.dp)) {
         Box(
             Modifier
-                .fillMaxHeight()
-                .fillMaxWidth(progress)
-                .background(c.primary),
+                .align(Alignment.BottomStart)
+                .fillMaxWidth()
+                .height(if (dragging) 5.dp else 3.dp)
+                .background(Color.White.copy(alpha = 0.24f)),
+        ) {
+            Box(
+                Modifier
+                    .fillMaxHeight()
+                    .fillMaxWidth(progress)
+                    .background(c.primary),
+            )
+        }
+        // Tap to jump; horizontal drag to scrub. Neither claims vertical moves, so the pager
+        // still turns the page and the video's own gestures are untouched outside this strip.
+        Box(
+            Modifier
+                .fillMaxSize()
+                .pointerInput(duration) {
+                    detectTapGestures { offset ->
+                        dragFraction = null
+                        player.seekTo((offset.x / size.width * duration).toLong())
+                    }
+                }
+                .pointerInput(duration) {
+                    detectHorizontalDragGestures(
+                        onDragStart = { offset ->
+                            dragFraction = (offset.x / size.width).coerceIn(0f, 1f)
+                        },
+                        onDragEnd = {
+                            dragFraction?.let { player.seekTo((it * duration).toLong()) }
+                            dragFraction = null
+                        },
+                        onDragCancel = { dragFraction = null },
+                    ) { change, _ ->
+                        change.consume()
+                        dragFraction = (change.position.x / size.width).coerceIn(0f, 1f)
+                    }
+                },
         )
+        val drag = dragFraction
+        if (drag != null) {
+            Text(
+                formatDuration((drag * duration).toLong()) + " / " + formatDuration(duration),
+                color = Color.White,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Black,
+                modifier = Modifier
+                    .layout { measurable, constraints ->
+                        val placeable = measurable.measure(constraints.copy(minWidth = 0, minHeight = 0))
+                        layout(constraints.maxWidth, constraints.maxHeight) {
+                            val x = (drag * constraints.maxWidth - placeable.width / 2f)
+                                .coerceIn(0f, (constraints.maxWidth - placeable.width).coerceAtLeast(0).toFloat())
+                            placeable.place(x.toInt(), 0)
+                        }
+                    }
+                    .clip(RoundedCornerShape(50))
+                    .background(Color.Black.copy(alpha = 0.78f))
+                    .padding(horizontal = 10.dp, vertical = 4.dp),
+            )
+        }
     }
 }

@@ -127,6 +127,8 @@ fun HomeScreen(
         header = {
             Column {
                 ScreenHeader(title = "Shinobi", brandMark = true,
+                    // The Home logo opens Settings (the same sheet the avatar opens).
+                    onBrandClick = onAccount,
                     leadingActions = { CircleAction(Icons.Rounded.Search, Loc.t("Search"), onSearch) },
                 ) {
                     ThemeToggleAction()
@@ -380,7 +382,7 @@ private fun ShortFeedCard(short: VideoItem, onClick: () -> Unit) {
             .padding(6.dp),
     ) {
         Box {
-            Thumbnail(thumbUrl, Modifier.fillMaxWidth().aspectRatio(3f / 4f))
+            Thumbnail(thumbUrl, Modifier.fillMaxWidth().aspectRatio(3f / 4f), blur = SensitiveFilter.shouldBlur(short))
             Box(
                 modifier = Modifier
                     .align(Alignment.TopStart)
@@ -1221,7 +1223,7 @@ private fun HistoryCard(video: VideoItem, onClick: () -> Unit) {
     val menu = LocalVideoMenu.current
     Column(Modifier.width(168.dp).prefetchOnPress(video.id).pressable(pressedScale = 0.97f, onLongClick = { menu(video) }, onClick = onClick)) {
         Box {
-            Thumbnail(video.thumbnail, Modifier.fillMaxWidth().aspectRatio(16f / 9f), radius = 20)
+            Thumbnail(video.thumbnail, Modifier.fillMaxWidth().aspectRatio(16f / 9f), radius = 20, blur = SensitiveFilter.shouldBlur(video))
             DurationPill(video.durationSec, Modifier.align(Alignment.BottomEnd).padding(6.dp), small = true)
             ResumeBar(video.id, Modifier.align(Alignment.BottomStart))
         }

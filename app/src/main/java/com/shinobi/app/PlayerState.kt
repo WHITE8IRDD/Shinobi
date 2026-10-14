@@ -537,18 +537,29 @@ class PlayerState(private val scope: CoroutineScope) {
 
     /**
      * Switches quality (null = Auto). The media source is rebuilt from the cached stream
-     * info at the same position, keeping play/pause as it was.
+     * info at the same position, keeping play/pause as it was. The label changes at once and
+     * only rungs this phone can decode are ever selected (see StreamSelection/DeviceCodec),
+     * so every listed quality applies cleanly: no freeze, no error.
      */
     fun setQuality(height: Int?) {
         QualityPreference.set(height)
-        val player = controller ?: return
         val item = details?.item ?: current ?: return
+        // Feedback first: the pill and sheet show the new target immediately.
+        val info = StreamCache.get(item.id)
+        val target = info?.let { StreamSelection.pick(it).playedHeight } ?: height
+        details = details?.copy(quality = target?.let { "${it}p" })
+        val player = controller ?: return
         val position = player.currentPosition
         val playWhenReady = player.playWhenReady
-        replaceCurrent(player, item, position)
-        player.playWhenReady = playWhenReady
-        val info = StreamCache.get(item.id) ?: return
-        details = details?.copy(quality = StreamSelection.pick(info).playedHeight?.let { "${it}p" })
+        val wasPlaying = player.isPlaying
+        runCatching {
+            replaceCurrent(player, item, position)
+            player.playWhenReady = playWhenReady
+            if (wasPlaying) player.play()
+        }.onFailure {
+            Log.w(TAG, "quality change to ${height ?: "auto"} failed", it)
+            actionMessage = Loc.t("This video couldn't be played.")
+        }
     }
 
     /** Fresh links too: the cached ones may be exactly what YouTube refused. */

@@ -24,6 +24,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
 import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
+import androidx.compose.material.icons.rounded.BlurOn
 import androidx.compose.material.icons.rounded.BrightnessAuto
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DarkMode
@@ -70,7 +71,7 @@ fun VideoOptionsSheet(video: VideoItem, player: PlayerState, onDismiss: () -> Un
         containerColor = c.surfaceContainerLow,
     ) {
         Row(Modifier.padding(horizontal = 20.dp).padding(bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Thumbnail(video.thumbnail, Modifier.width(112.dp).aspectRatio(16f / 9f), radius = 14)
+            Thumbnail(video.thumbnail, Modifier.width(112.dp).aspectRatio(16f / 9f), radius = 14, blur = SensitiveFilter.shouldBlur(video))
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
                 Text(video.title, fontWeight = FontWeight.Bold, fontSize = 15.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -121,7 +122,7 @@ fun QueueCard(player: PlayerState, onOpen: () -> Unit) {
             .padding(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Thumbnail(next.thumbnail, Modifier.width(88.dp).aspectRatio(16f / 9f), radius = 12)
+        Thumbnail(next.thumbnail, Modifier.width(88.dp).aspectRatio(16f / 9f), radius = 12, blur = SensitiveFilter.shouldBlur(next))
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(
@@ -568,6 +569,13 @@ fun FeedSettings() {
             subtitle = Loc.t("Hide the controls while a Short plays, and bring them back with a tap."),
             checked = AppSettings.shortsAutoHide,
             onCheckedChange = { AppSettings.shortsAutoHide = it },
+        )
+        SettingSwitchRow(
+            icon = Icons.Rounded.BlurOn,
+            title = Loc.t("Blur sensitive thumbnails"),
+            subtitle = Loc.t("Blur age-restricted and mature thumbnails. Regular videos are never blurred."),
+            checked = AppSettings.blurSensitiveThumbnails,
+            onCheckedChange = { AppSettings.blurSensitiveThumbnails = it },
         )
         Spacer(Modifier.height(12.dp))
         Text(Loc.t("Previews on Home"), fontWeight = FontWeight.Bold, fontSize = 14.sp)

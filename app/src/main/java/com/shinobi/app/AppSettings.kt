@@ -22,6 +22,7 @@ object AppSettings {
     private const val KEY_SHORTS_AUTOHIDE = "shorts_autohide"
     private const val KEY_TRENDING_REGION = "trending_region"
     private const val KEY_FEED_PREVIEWS = "feed_previews"
+    private const val KEY_BLUR_SENSITIVE = "blur_sensitive_thumbnails"
     /** The trending region follows where the phone is. */
     const val AUTO_REGION = "auto"
     private var prefs: SharedPreferences? = null
@@ -29,6 +30,19 @@ object AppSettings {
     private var mixState by mutableStateOf(true)
     private var autoHideState by mutableStateOf(true)
     private var previewsState by mutableStateOf(FeedPreview.ALWAYS)
+    private var blurSensitiveState by mutableStateOf(true)
+
+    /**
+     * Blur the thumbnails of age-restricted/mature videos (see [SensitiveFilter]). On by
+     * default; detection is YouTube's own metadata, so ordinary content is never blurred.
+     */
+    var blurSensitiveThumbnails: Boolean
+        get() = blurSensitiveState
+        set(value) {
+            if (blurSensitiveState == value) return
+            blurSensitiveState = value
+            prefs?.edit()?.putBoolean(KEY_BLUR_SENSITIVE, value)?.apply()
+        }
 
     /**
      * Mix Shorts and long videos together in the Home "For you" feed. On by default.
@@ -108,6 +122,10 @@ object AppSettings {
             ?: AUTO_REGION
         mixState = p.getBoolean(KEY_MIX_SHORTS, true)
         autoHideState = p.getBoolean(KEY_SHORTS_AUTOHIDE, true)
-        previewsState = p.getString(KEY_FEED_PREVIEWS, null)?.takeIf { it == FeedPreview.ALWAYS || it == FeedPreview.WIFI || it == FeedPreview.OFF } ?: FeedPreview.ALWAYS
+        // Low-RAM phones (2–3 GB) start with Home previews off — they keep a second decoder
+        // warm — and can still turn them on explicitly.
+        previewsState = p.getString(KEY_FEED_PREVIEWS, null)?.takeIf { it == FeedPreview.ALWAYS || it == FeedPreview.WIFI || it == FeedPreview.OFF }
+            ?: if (DeviceRam.lowRam) FeedPreview.OFF else FeedPreview.ALWAYS
+        blurSensitiveState = p.getBoolean(KEY_BLUR_SENSITIVE, true)
     }
 }

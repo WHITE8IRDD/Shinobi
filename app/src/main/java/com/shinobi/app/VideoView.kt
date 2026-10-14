@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.mandatorySystemGestures
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -263,7 +264,14 @@ fun VideoContent(
                     ),
                 ),
             )
-            val edge = if (fullscreen) Modifier.windowInsetsPadding(WindowInsets.displayCutout).padding(horizontal = 12.dp, vertical = 8.dp) else Modifier
+            val edge = if (fullscreen) {
+                // Everything (video is already fitted above) stays inside the visible screen:
+                // the cutout a landscape phone puts beside the camera, and the gesture areas.
+                Modifier
+                    .windowInsetsPadding(WindowInsets.displayCutout)
+                    .windowInsetsPadding(WindowInsets.mandatorySystemGestures)
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+            } else Modifier
             Box(Modifier.fillMaxSize().then(edge)) {
                 // Top row: minimize / exit fullscreen, title (fullscreen), quality.
                 Row(
@@ -365,6 +373,12 @@ fun VideoContent(
                         enabled = enabled,
                         onPreview = { scrubPreview = it; touched() },
                         onSeek = { scrubPreview = null; state.seekTo(it); touched() },
+                        // Fullscreen gets the YouTube-size slider: a taller drag target and a
+                        // thicker track, still fully inside the edge-safe box around this row.
+                        trackHeight = if (fullscreen) 5.dp else 4.dp,
+                        knob = if (fullscreen) 8.dp else 7.dp,
+                        knobDragging = if (fullscreen) 11.dp else 9.dp,
+                        touchHeight = if (fullscreen) 40.dp else 24.dp,
                     )
                 }
             }
@@ -494,6 +508,9 @@ fun FullscreenPlayer(state: PlayerState, onExit: () -> Unit) {
         onToggleFullscreen = onExit,
         modifier = Modifier
             .fillMaxSize()
+            // The player is exactly the display: anything that would fall outside it is
+            // clipped instead of sitting off-screen (controls and seek bar included).
+            .clipToBounds()
             .draggable(
                 state = rememberDraggableState { delta -> drag = (drag + delta).coerceAtLeast(0f) },
                 orientation = Orientation.Vertical,
@@ -787,8 +804,9 @@ fun MorphPlayButton(
 }
 
 /**
- * Scrubber: buffered and played tracks, a knob that grows while dragging. Thin and white on
- * the video; the audio-only stage passes its own colors and sizes.
+ * Scrubber: buffered and played tracks, a knob that grows while dragging, and a YouTube-style
+ * time bubble that rides the drag position. Thin and white on the video; the audio-only stage
+ * passes its own colors and sizes.
  */
 @Composable
 private fun Scrubber(
@@ -805,52 +823,78 @@ private fun Scrubber(
     trackHeight: Dp = 4.dp,
     knob: Dp = 7.dp,
     knobDragging: Dp = 9.dp,
+    touchHeight: Dp = 24.dp,
+    bubble: Boolean = true,
 ) {
     var dragFraction by remember { mutableStateOf<Float?>(null) }
     val duration = durationMs.coerceAtLeast(1L)
     val playedFraction = dragFraction ?: (positionMs.toFloat() / duration).coerceIn(0f, 1f)
     val bufferedFraction = (bufferedMs.toFloat() / duration).coerceIn(0f, 1f)
     val knobRadius by animateDpAsState(if (dragFraction != null) knobDragging else knob, label = "knob")
-    Canvas(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(24.dp)
-            .pointerInput(enabled, durationMs) {
-                if (!enabled || durationMs <= 0) return@pointerInput
-                detectTapGestures { offset -> onSeek((offset.x / size.width * durationMs).toLong()) }
-            }
-            .pointerInput(enabled, durationMs) {
-                if (!enabled || durationMs <= 0) return@pointerInput
-                detectHorizontalDragGestures(
-                    onDragStart = { offset ->
-                        dragFraction = (offset.x / size.width).coerceIn(0f, 1f)
-                        onPreview((dragFraction!! * durationMs).toLong())
-                    },
-                    onDragEnd = {
-                        dragFraction?.let { onSeek((it * durationMs).toLong()) }
-                        dragFraction = null
-                    },
-                    onDragCancel = { dragFraction = null },
-                ) { change, _ ->
-                    change.consume()
-                    dragFraction = (change.position.x / size.width).coerceIn(0f, 1f)
-                    onPreview((dragFraction!! * durationMs).toLong())
+    Box(Modifier.fillMaxWidth().height(touchHeight)) {
+        Canvas(
+            modifier = Modifier
+                .fillMaxSize()
+                .pointerInput(enabled, durationMs) {
+                    if (!enabled || durationMs <= 0) return@pointerInput
+                    detectTapGestures { offset -> onSeek((offset.x / size.width * durationMs).toLong()) }
                 }
-            },
-    ) {
-        val trackH = trackHeight.toPx()
-        val y = size.height / 2f - trackH / 2f
-        val r = CornerRadius(trackH / 2f)
-        drawRoundRect(track, Offset(0f, y), Size(size.width, trackH), r)
-        drawRoundRect(buffered, Offset(0f, y), Size(size.width * bufferedFraction, trackH), r)
-        drawRoundRect(played, Offset(0f, y), Size(size.width * playedFraction, trackH), r)
-        // SponsorBlock segments, in their category colors, over the track.
-        segments.forEach { seg ->
-            val x0 = size.width * (seg.startMs.toFloat() / duration).coerceIn(0f, 1f)
-            val x1 = size.width * (seg.endMs.toFloat() / duration).coerceIn(0f, 1f)
-            if (x1 > x0) drawRect(seg.category.color, Offset(x0, y), Size(x1 - x0, trackH))
+                .pointerInput(enabled, durationMs) {
+                    if (!enabled || durationMs <= 0) return@pointerInput
+                    detectHorizontalDragGestures(
+                        onDragStart = { offset ->
+                            dragFraction = (offset.x / size.width).coerceIn(0f, 1f)
+                            onPreview((dragFraction!! * durationMs).toLong())
+                        },
+                        onDragEnd = {
+                            dragFraction?.let { onSeek((it * durationMs).toLong()) }
+                            dragFraction = null
+                        },
+                        onDragCancel = { dragFraction = null },
+                    ) { change, _ ->
+                        change.consume()
+                        dragFraction = (change.position.x / size.width).coerceIn(0f, 1f)
+                        onPreview((dragFraction!! * durationMs).toLong())
+                    }
+                },
+        ) {
+            val trackH = trackHeight.toPx()
+            val y = size.height / 2f - trackH / 2f
+            val r = CornerRadius(trackH / 2f)
+            drawRoundRect(track, Offset(0f, y), Size(size.width, trackH), r)
+            drawRoundRect(buffered, Offset(0f, y), Size(size.width * bufferedFraction, trackH), r)
+            drawRoundRect(played, Offset(0f, y), Size(size.width * playedFraction, trackH), r)
+            // SponsorBlock segments, in their category colors, over the track.
+            segments.forEach { seg ->
+                val x0 = size.width * (seg.startMs.toFloat() / duration).coerceIn(0f, 1f)
+                val x1 = size.width * (seg.endMs.toFloat() / duration).coerceIn(0f, 1f)
+                if (x1 > x0) drawRect(seg.category.color, Offset(x0, y), Size(x1 - x0, trackH))
+            }
+            drawCircle(played, radius = knobRadius.toPx(), center = Offset(size.width * playedFraction, size.height / 2f))
         }
-        drawCircle(played, radius = knobRadius.toPx(), center = Offset(size.width * playedFraction, size.height / 2f))
+        // The drag preview: a time chip riding the knob (exactly as YouTube scrubs).
+        val drag = dragFraction
+        if (bubble && drag != null && durationMs > 0) {
+            val label = formatDuration((drag * durationMs).toLong())
+            Text(
+                label,
+                color = Color.White,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Black,
+                modifier = Modifier
+                    .layout { measurable, constraints ->
+                        val placeable = measurable.measure(constraints.copy(minWidth = 0, minHeight = 0))
+                        layout(constraints.maxWidth, constraints.maxHeight) {
+                            val x = (drag * constraints.maxWidth - placeable.width / 2f)
+                                .coerceIn(0f, (constraints.maxWidth - placeable.width).coerceAtLeast(0).toFloat())
+                            placeable.place(x.toInt(), 0)
+                        }
+                    }
+                    .clip(RoundedCornerShape(50))
+                    .background(Color.Black.copy(alpha = 0.78f))
+                    .padding(horizontal = 9.dp, vertical = 4.dp),
+            )
+        }
     }
 }
 
@@ -912,6 +956,7 @@ private fun PlayerScrubber(
     trackHeight: Dp = 4.dp,
     knob: Dp = 7.dp,
     knobDragging: Dp = 9.dp,
+    touchHeight: Dp = 24.dp,
 ) {
     Scrubber(
         segments = if (SponsorBlock.enabled) state.segments.filter { it.action != SponsorBlock.Action.Off } else emptyList(),
@@ -927,5 +972,6 @@ private fun PlayerScrubber(
         trackHeight = trackHeight,
         knob = knob,
         knobDragging = knobDragging,
+        touchHeight = touchHeight,
     )
 }

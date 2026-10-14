@@ -609,6 +609,7 @@ object InnerTube {
             views = parseViews(viewsText),
             uploaded = null,
             isShort = true,
+            sensitive = isSensitive(o),
         )
     }
 
@@ -627,6 +628,7 @@ object InnerTube {
             views = parseViews(o.text("viewCountText")),
             uploaded = null,
             isShort = true,
+            sensitive = isSensitive(o),
         )
     }
 
@@ -634,6 +636,13 @@ object InnerTube {
     internal fun isMembersOnly(o: JSONObject): Boolean =
         o.collectStrings("badgeStyle").any { it.contains("MEMBERS_ONLY") } ||
             o.collectStrings("style").any { it == "BADGE_STYLE_TYPE_MEMBERS_ONLY" }
+
+    /**
+     * Age-restricted/mature per YouTube's own badges and flags (see [SensitiveFilter]):
+     * exact metadata, checked on strings already parsed off the UI thread — never a guess
+     * from the title or thumbnail, so ordinary videos are never flagged.
+     */
+    internal fun isSensitive(o: JSONObject): Boolean = SensitiveFilter.flaggedInFeed(o)
 
     /**
      * Full movies and TV (Primetime Channels like HBO Max / Shudder, YouTube Movies): a paid-offer
@@ -685,6 +694,7 @@ object InnerTube {
             views = parseViews(o.text("viewCountText") ?: o.text("shortViewCountText") ?: infoRuns.firstOrNull { it.contains("view") }),
             uploaded = o.text("publishedTimeText") ?: infoRuns.firstOrNull { it.contains("ago") },
             isShort = hasReelEndpoint(o),
+            sensitive = isSensitive(o),
         )
     }
 
@@ -712,6 +722,7 @@ object InnerTube {
             durationSec = parseDuration(duration),
             views = parseViews(parts.firstOrNull { it.contains("view") }),
             uploaded = parts.firstOrNull { it.contains("ago") },
+            sensitive = isSensitive(o),
         )
     }
 

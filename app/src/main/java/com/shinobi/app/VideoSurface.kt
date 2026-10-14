@@ -29,6 +29,11 @@ val NoVideoSurface: @Composable (Modifier) -> Unit = {}
  * "flash" when minimizing. Here the SurfaceTexture is never released (the destroy callback
  * returns false) and is handed back to whichever TextureView shows the video next, so the
  * player's surface never changes and playback never notices a move.
+ *
+ * The buffer size is re-stamped to the showing view's size on every attach and resize
+ * (fullscreen rotation, the mini-player slot): a texture kept from a differently-sized view
+ * would otherwise keep the old buffer shape and the picture would no longer match the view
+ * it is drawn into (cropped or squashed after rotating to landscape).
  */
 object SharedVideoTexture {
     var texture: SurfaceTexture? = null
@@ -39,7 +44,7 @@ object SharedVideoTexture {
     var version by mutableIntStateOf(0)
         private set
 
-    fun adopt(view: TextureView, fresh: SurfaceTexture) {
+    fun adopt(view: TextureView, fresh: SurfaceTexture, width: Int = 0, height: Int = 0) {
         val kept = texture
         if (kept == null) {
             texture = fresh
@@ -50,6 +55,9 @@ object SharedVideoTexture {
             runCatching { view.setSurfaceTexture(kept) }
                 .onFailure { Log.w("Shinobi", "couldn't re-attach the video texture", it) }
         }
+        val w = if (width > 0) width else view.width
+        val h = if (height > 0) height else view.height
+        if (w > 0 && h > 0) runCatching { texture?.setDefaultBufferSize(w, h) }
     }
 }
 
@@ -66,8 +74,15 @@ fun VideoSurface(player: Player?, modifier: Modifier = Modifier) {
                 // A view created after the texture exists shows it straight away.
                 SharedVideoTexture.texture?.let { runCatching { setSurfaceTexture(it) } }
                 surfaceTextureListener = object : TextureView.SurfaceTextureListener {
-                    override fun onSurfaceTextureAvailable(st: SurfaceTexture, width: Int, height: Int) = SharedVideoTexture.adopt(this@apply, st)
-                    override fun onSurfaceTextureSizeChanged(st: SurfaceTexture, width: Int, height: Int) {}
+                    override fun onSurfaceTextureAvailable(st: SurfaceTexture, width: Int, height: Int) = SharedVideoTexture.adopt(this@apply, st, width, height)
+                    override fun onSurfaceTextureSizeChanged(st: SurfaceTexture, width: Int, height: Int) {
+                        // The picture must always be drawn into a buffer of the view's shape:
+                        // after a rotation to (or out of) landscape this is what keeps the
+                        // video fitted to the display instead of cropped at the old size.
+                        if (st === SharedVideoTexture.texture && width > 0 && height > 0) {
+                            runCatching { st.setDefaultBufferSize(width, height) }
+                        }
+                    }
                     // Never let the view release it: the next view (or this one, re-attached) reuses it.
                     override fun onSurfaceTextureDestroyed(st: SurfaceTexture): Boolean = st !== SharedVideoTexture.texture
                     override fun onSurfaceTextureUpdated(st: SurfaceTexture) = AvSync.onFrameDrawn()
@@ -77,6 +92,9 @@ fun VideoSurface(player: Player?, modifier: Modifier = Modifier) {
                         // Before the hardware layer is built, so it adopts the kept texture.
                         val kept = SharedVideoTexture.texture ?: return
                         if (surfaceTexture !== kept) runCatching { setSurfaceTexture(kept) }
+                        // The view may already be measured (a different-sized slot than the
+                        // one that created the texture): re-stamp the buffer to this view.
+                        if (width > 0 && height > 0) runCatching { kept.setDefaultBufferSize(width, height) }
                     }
                     override fun onViewDetachedFromWindow(v: View) {}
                 })

@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -107,13 +108,28 @@ val SunnyShape = LobedShape(lobes = 8, depth = 0.05f)
 fun ScreenHeader(
     title: String,
     brandMark: Boolean = false,
+    /** When set, the centered brand mark opens this (the Home logo opens Settings). */
+    onBrandClick: (() -> Unit)? = null,
     leadingActions: @Composable () -> Unit = {},
     actions: @Composable () -> Unit = {},
 ) {
     if (brandMark) {
         // Center against the full header bounds, never against leftover row space.
         Box(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 16.dp, vertical = 12.dp).height(44.dp)) {
-            Box(Modifier.align(Alignment.Center)) { BrandMark() }
+            Box(Modifier.align(Alignment.Center)) {
+                if (onBrandClick != null) {
+                    // A real button target (44 dp, like the actions), so the logo opens
+                    // Settings comfortably on the first tap.
+                    Box(
+                        Modifier
+                            .size(44.dp)
+                            .pressable(onClick = onBrandClick),
+                        contentAlignment = Alignment.Center,
+                    ) { BrandMark() }
+                } else {
+                    BrandMark()
+                }
+            }
             Row(Modifier.align(Alignment.CenterStart), horizontalArrangement = Arrangement.spacedBy(10.dp)) { leadingActions() }
             Row(Modifier.align(Alignment.CenterEnd), horizontalArrangement = Arrangement.spacedBy(10.dp)) { actions() }
         }
@@ -298,15 +314,30 @@ fun Modifier.prefetchOnPress(videoId: String): Modifier = pointerInput(videoId) 
 val LocalVideoMenu = staticCompositionLocalOf<(VideoItem) -> Unit> { {} }
 
 @Composable
-fun Thumbnail(url: String?, modifier: Modifier = Modifier, radius: Int = 22) {
-    AsyncImage(
-        model = url,
-        contentDescription = null,
-        contentScale = ContentScale.Crop,
+fun Thumbnail(url: String?, modifier: Modifier = Modifier, radius: Int = 22, blur: Boolean = false) {
+    // Sensitive thumbnails (see SensitiveFilter): blur the picture itself and lay a light
+    // scrim over it — GPU blur on Android 12+, scrim only below (no software blur on old
+    // low-RAM phones). The rounded container keeps the card shape while the image blurs.
+    val c = MaterialTheme.colorScheme
+    Box(
         modifier = modifier
             .clip(RoundedCornerShape(radius.dp))
-            .background(MaterialTheme.colorScheme.surfaceContainerHighest),
-    )
+            .background(c.surfaceContainerHighest),
+    ) {
+        AsyncImage(
+            model = url,
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize().then(sensitiveImageBlur(blur)),
+        )
+        if (blur) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = if (android.os.Build.VERSION.SDK_INT >= 31) 0.16f else 0.5f)),
+            )
+        }
+    }
 }
 
 @Composable
@@ -366,7 +397,7 @@ fun VideoCard(video: VideoItem, onClick: () -> Unit, modifier: Modifier = Modifi
             .padding(6.dp),
     ) {
         Box {
-            Thumbnail(video.thumbnail, Modifier.fillMaxWidth().aspectRatio(16f / 9f))
+            Thumbnail(video.thumbnail, Modifier.fillMaxWidth().aspectRatio(16f / 9f), blur = SensitiveFilter.shouldBlur(video))
             if (preview) FeedPreviewSurface(Modifier.matchParentSize().clip(RoundedCornerShape(22.dp)))
             DurationPill(video.durationSec, Modifier.align(Alignment.BottomEnd).padding(10.dp))
             ResumeBar(video.id, Modifier.align(Alignment.BottomStart))
@@ -415,7 +446,7 @@ fun VideoRow(video: VideoItem, onClick: () -> Unit, trailing: (@Composable () ->
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(Modifier.width(140.dp)) {
-            Thumbnail(video.thumbnail, Modifier.fillMaxWidth().aspectRatio(16f / 9f), radius = 16)
+            Thumbnail(video.thumbnail, Modifier.fillMaxWidth().aspectRatio(16f / 9f), radius = 16, blur = SensitiveFilter.shouldBlur(video))
             DurationPill(video.durationSec, Modifier.align(Alignment.BottomEnd).padding(6.dp), small = true)
         }
         Spacer(Modifier.width(12.dp))
