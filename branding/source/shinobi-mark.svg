@@ -1,9 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
-  <!-- Traced from owner's "LOGO MARK BALCK.png" (5423x6164, pure-black glyph on transparent).
+  <!-- Official mark from owner's "11.png" (1885x2119, off-white glyph on transparent).
        Method: alpha threshold 128 + OpenCV findContours RETR_EXTERNAL + approxPolyDP eps=0.0003*peri.
-       Topology: 3 disconnected opaque components, 0 enclosed holes (verified). Body + 2 eye islands.
-       Normalised: full source rect mapped to 1024 preserving aspect (scale=0.166126), centred. -->
-  <path id="body" d="M202.4,5.6 L236.6,126.4 L61.9,131.1 L206.1,228.9 L310.9,202.7 L312.6,505.5 L789.0,651.0 L789.7,765.3 L633.9,849.4 L197.1,642.1 L254.4,849.4 L632.4,1023.7 L959.5,857.7 L961.5,533.1 L645.1,426.4 L486.2,432.1 L404.8,235.1 L440.2,241.2 L589.5,280.3 L630.9,288.1 L683.0,279.9 L826.1,240.6 L860.1,236.6 L962.3,368.1 L962.3,135.1 L632.0,0.2 L326.2,120.8 L302.9,74.1 Z" fill="#FFFFFF"/>
-  <path id="eye-left" d="M475.4,281.4 L475.0,282.4 L475.0,285.2 L475.5,287.6 L476.5,290.4 L478.9,295.0 L484.2,303.3 L494.1,318.0 L504.8,332.4 L517.7,348.5 L527.9,360.0 L608.4,360.0 L608.4,354.2 L608.9,348.4 L608.9,342.4 L608.6,339.7 L607.8,336.7 L606.9,334.9 L605.9,333.4 L602.8,330.6 Z" fill="#FFFFFF"/>
-  <path id="eye-right" d="M833.9,281.4 L699.1,330.6 L698.8,360.0 L785.0,360.0 L785.9,357.3 L787.4,354.3 L793.2,345.0 L802.0,332.6 L820.7,307.0 L828.6,295.4 L831.4,290.6 L833.4,286.4 L834.2,283.6 L834.2,282.2 Z" fill="#FFFFFF"/>
+       Topology: 1 connected opaque component, 0 enclosed holes (verified). Single solid
+       silhouette with one triangular eye notch; no separate eye islands.
+       Normalised: full source rect mapped to 1024 preserving aspect (scale=0.483247), centred. -->
+  <path id="body" d="M368.2,0.5 L159.5,121.8 L763.5,514.2 L607.4,611.8 L284.1,522.9 L276.4,515.1 L227.1,406.9 L557.7,493.9 L60.4,174.9 L127.6,311.7 L57.0,356.2 L156.1,386.1 L156.6,900.8 L362.0,1023.0 L966.5,672.7 L965.5,348.4 Z" fill="#FFFFFF"/>
 </svg>

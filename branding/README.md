@@ -53,9 +53,9 @@ taste:
 
 ## Colour
 
-The mark is monochrome by design. It is white as three solid shapes — body plus two
-eye islands (owner's artwork verified: 0 enclosed holes, 3 disconnected components) —
-so it takes on whatever colour it is placed against:
+The mark is monochrome by design. It is a single white solid silhouette (owner's
+artwork verified: 0 enclosed holes, 1 connected component) with one triangular
+eye notch, so it takes on whatever colour it is placed against:
 
 - launcher icon — white on the near-black tile, as in the master artwork;
 - in-app — tinted by the theme, so it works in Shinobi Ember, Material You and every palette in
@@ -68,11 +68,11 @@ near-black so the app icon stays unmistakable on any wallpaper.
 
 ## Owner source files
 
-The owner's four PNGs are committed under `source/` with exact filenames (typos kept):
-`1 BLACK LOGO.png` and `LOGO WHITE.png` are full lockups (emblem + SHINOBI wordmark);
-`LOGO MARK BALCK.png` and `LOGO AMRK WHITE.png` are the mark alone. All four are a
-single-colour glyph on transparent with clean alpha — the black versions are a black
-glyph on transparent, not a solid rectangle. `shinobi-mark.svg` is a vector trace of
-`LOGO MARK BALCK.png` (alpha threshold 128 + contour trace, 28/20/14 pts,
-render-vs-source diff 0.40%). The lockups belong where there is horizontal room
-(README header); the square slots (launcher, splash, notification, tile) use the mark.
+The owner's PNGs are committed under `source/` with exact filenames. The original
+set (`1 BLACK LOGO.png`, `LOGO WHITE.png`, `LOGO MARK BALCK.png`,
+`LOGO AMRK WHITE.png`, typos kept) was a full lockup pair plus a mark pair with
+two eye islands. The current official mark is `11.png`: one connected off-white
+silhouette on transparent with a single triangular eye notch and no separate
+eyes. `shinobi-mark.svg` is a vector trace of `11.png` (alpha threshold 128 +
+contour trace, 16 pts, render-vs-source diff 0.36%). The generator emits eye
+paths only when the master defines them.
