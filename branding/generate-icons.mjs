@@ -145,8 +145,8 @@ function vector({ w, h = w, placement: p, fill, doc, extra = '' }) {
   return VECTOR.replaceAll('__W__', String(w))
     .replaceAll('__H__', String(h))
     .replace('__GROUP__', group(p))
-    .replace('__FILL__', fill)
-    .replace('__EXTRA__', extra)
+    .replaceAll('__FILL__', fill)
+    .replaceAll('__EXTRA__', extra)
     .replace('__DOC__', doc);
 }
 
