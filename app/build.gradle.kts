@@ -12,9 +12,9 @@ android {
         applicationId = "com.shinobi.app"
         minSdk = 26
         targetSdk = 36
-        // SHINOBI 1.1 (product owner, 2026-10-14). A release build is identifiable in About.
-        versionCode = 5
-        versionName = "1.1"
+        // SHINOBI 1.2 (product owner, 2026-10-14). A release build is identifiable in About.
+        versionCode = 6
+        versionName = "1.2"
     }
 
     buildTypes {

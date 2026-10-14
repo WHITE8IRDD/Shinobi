@@ -53,8 +53,9 @@ taste:
 
 ## Colour
 
-The mark is monochrome by design. It is white with the eye slits cut out as holes, which means
-it takes on whatever colour it is placed against:
+The mark is monochrome by design. It is white as three solid shapes — body plus two
+eye islands (owner's artwork verified: 0 enclosed holes, 3 disconnected components) —
+so it takes on whatever colour it is placed against:
 
 - launcher icon — white on the near-black tile, as in the master artwork;
 - in-app — tinted by the theme, so it works in Shinobi Ember, Material You and every palette in
@@ -64,3 +65,14 @@ it takes on whatever colour it is placed against:
 
 Nothing is hard-coded to a single brand hex except the icon tile itself, which is intentionally
 near-black so the app icon stays unmistakable on any wallpaper.
+
+## Owner source files
+
+The owner's four PNGs are committed under `source/` with exact filenames (typos kept):
+`1 BLACK LOGO.png` and `LOGO WHITE.png` are full lockups (emblem + SHINOBI wordmark);
+`LOGO MARK BALCK.png` and `LOGO AMRK WHITE.png` are the mark alone. All four are a
+single-colour glyph on transparent with clean alpha — the black versions are a black
+glyph on transparent, not a solid rectangle. `shinobi-mark.svg` is a vector trace of
+`LOGO MARK BALCK.png` (alpha threshold 128 + contour trace, 28/20/14 pts,
+render-vs-source diff 0.40%). The lockups belong where there is horizontal room
+(README header); the square slots (launcher, splash, notification, tile) use the mark.
