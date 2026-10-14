@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -130,10 +131,15 @@ fun HomeScreen(
                     ThemeToggleAction()
                     AccountAction(onAccount)
                 }
-                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    androidx.compose.material3.FilterChip(selected = !showTrending, onClick = { showTrending = false }, label = { Text(Loc.t("For you")) })
-                    androidx.compose.material3.FilterChip(selected = showTrending, onClick = { showTrending = true }, label = { Text(Loc.t("Trending")) })
-                }
+                HomeTasteFilterRow(
+                    topics = personalized.topics,
+                    selected = personalized.selectedTopic,
+                    onSelectTopic = { showTrending = false; personalized.selectTopic(it) },
+                    onOpenShorts = onOpenShortsTab,
+                    onRefresh = { if (showTrending) trending.load(AppSettings.trendingCountry, refresh = true) else personalized.refresh() },
+                    trending = showTrending,
+                    onTrending = { showTrending = true },
+                )
             }
         },
     ) { top ->
@@ -222,16 +228,6 @@ private fun PersonalizedHomeContent(
                 item(key = "home-shorts-top", contentType = "shorts-shelf") {
                     ShortsShelf(shortsShelf.take(12), onOpenShort = onOpenShort, onViewAll = onOpenShortsTab)
                 }
-            }
-            // Taste filter chips bar
-            item(key = "taste-chips") {
-                HomeTasteFilterRow(
-                    topics = state.topics,
-                    selected = state.selectedTopic,
-                    onSelectTopic = state::selectTopic,
-                    onOpenShorts = onOpenShortsTab,
-                    onRefresh = state::refresh,
-                )
             }
 
             if (entries.isEmpty()) {
@@ -338,7 +334,7 @@ private fun ShortFeedCard(short: VideoItem, onClick: () -> Unit) {
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(
-                    short.title,
+                    BidiText.clean(short.title),
                     style = TextStyle(textDirection = androidx.compose.ui.text.style.TextDirection.Content),
                     fontWeight = FontWeight.Bold,
                     fontSize = 16.sp,
@@ -361,12 +357,14 @@ private fun ShortFeedCard(short: VideoItem, onClick: () -> Unit) {
 }
 
 @Composable
-private fun HomeTasteFilterRow(
+internal fun HomeTasteFilterRow(
     topics: List<String>,
     selected: String?,
     onSelectTopic: (String?) -> Unit,
     onOpenShorts: () -> Unit,
     onRefresh: () -> Unit,
+    trending: Boolean,
+    onTrending: () -> Unit,
 ) {
     val c = MaterialTheme.colorScheme
     val view = LocalView.current
@@ -380,20 +378,23 @@ private fun HomeTasteFilterRow(
     ) {
         FilterPill(
             label = Loc.t("For you"),
-            selected = selected == null,
+            selected = !trending && selected == null,
             icon = Icons.Rounded.AutoAwesome,
             onClick = { onSelectTopic(null) },
         )
+        FilterPill(label = Loc.t("Trending"), selected = trending, onClick = onTrending)
         FilterPill(
             label = Loc.t("Shorts"),
             selected = false,
             icon = Icons.Rounded.PlayArrow,
             onClick = onOpenShorts,
         )
-        topics.distinct().take(8).forEach { topic ->
+        topics.distinctBy { it.lowercase(java.util.Locale.ROOT) }.filterNot { topic ->
+            listOf("For you", "Trending", "Shorts", "Mix Shorts with videos").any { topic.equals(Loc.t(it), true) || topic.equals(it, true) }
+        }.take(8).forEach { topic ->
             FilterPill(
                 label = topic,
-                selected = selected.equals(topic, ignoreCase = true),
+                selected = !trending && selected.equals(topic, ignoreCase = true),
                 onClick = { onSelectTopic(topic) },
             )
         }
@@ -431,7 +432,7 @@ private fun FilterPill(
     val c = MaterialTheme.colorScheme
     Row(
         modifier = Modifier
-            .height(36.dp)
+            .heightIn(min = 40.dp)
             .pressable(onClick = onClick)
             .clip(CircleShape)
             .background(if (selected) c.primary else c.surfaceContainerHigh)
@@ -440,7 +441,7 @@ private fun FilterPill(
                 color = if (selected) c.primary else c.outlineVariant.copy(alpha = 0.28f),
                 shape = CircleShape,
             )
-            .padding(horizontal = 14.dp),
+            .padding(horizontal = 14.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (icon != null) {
@@ -748,7 +749,7 @@ fun SubscriptionsScreen(
 }
 
 @Composable
-private fun SignedOutSubscriptionsWelcome(
+internal fun SignedOutSubscriptionsWelcome(
     contentPadding: PaddingValues,
     onSearch: () -> Unit,
     onSignIn: () -> Unit,
@@ -804,21 +805,21 @@ private fun SignedOutSubscriptionsWelcome(
                     fontWeight = FontWeight.Medium,
                 )
                 Spacer(Modifier.height(18.dp))
-                Row(
+                Column(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     PillButton(
                         text = Loc.t("Find channels"),
                         onClick = onSearch,
                         icon = Icons.Rounded.Search,
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.fillMaxWidth(),
                     )
                     TonalPillButton(
                         text = Loc.t("Sign in"),
                         onClick = onSignIn,
                         icon = Icons.Rounded.AccountCircle,
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.fillMaxWidth(),
                     )
                 }
             }
@@ -829,18 +830,18 @@ private fun SignedOutSubscriptionsWelcome(
                 modifier = Modifier.padding(horizontal = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     FeatureBentoCard(
                         icon = Icons.Rounded.NotificationsActive,
                         title = Loc.t("Local following"),
                         body = Loc.t("Tap Subscribe on any video or channel to follow it right on this device."),
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.fillMaxWidth(),
                     )
                     FeatureBentoCard(
                         icon = Icons.Rounded.History,
                         title = Loc.t("Automatic discovery"),
                         body = Loc.t("Channels from your recent watch history appear here with their latest uploads."),
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.fillMaxWidth(),
                     )
                 }
             }
@@ -1156,7 +1157,7 @@ private fun HistoryCard(video: VideoItem, onClick: () -> Unit) {
             ResumeBar(video.id, Modifier.align(Alignment.BottomStart))
         }
         Spacer(Modifier.height(7.dp))
-        Text(video.title, style = TextStyle(textDirection = androidx.compose.ui.text.style.TextDirection.Content), fontSize = 13.sp, fontWeight = FontWeight.Bold, lineHeight = 16.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        Text(BidiText.clean(video.title), style = TextStyle(textDirection = androidx.compose.ui.text.style.TextDirection.Content), fontSize = 13.sp, fontWeight = FontWeight.Bold, lineHeight = 16.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
     }
 }
 

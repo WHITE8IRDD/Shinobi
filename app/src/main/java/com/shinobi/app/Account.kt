@@ -5,6 +5,7 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.async
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -199,15 +200,15 @@ object InnerTube {
     internal fun postAny(endpoint: String, body: JSONObject): JSONObject =
         if (Account.signedIn) post(endpoint, body) else post(endpoint, body, anonymous = true)
 
-    private fun request(endpoint: String, body: JSONObject, anonymous: Boolean, country: String): Request {
+    private fun request(endpoint: String, body: JSONObject, anonymous: Boolean, country: String, mobile: Boolean = false): Request {
         val auth = if (anonymous) null else Account.authorization() ?: throw NotSignedInException()
         body.put(
             "context",
             JSONObject().put(
                 "client",
                 JSONObject()
-                    .put("clientName", "WEB")
-                    .put("clientVersion", Account.clientVersion())
+                    .put("clientName", if (mobile) "MWEB" else "WEB")
+                    .put("clientVersion", if (mobile) MOBILE_VERSION else Account.clientVersion())
                     .put("hl", Loc.language)
                     .put("gl", country)
                     .apply { if (!anonymous) Account.visitorData()?.let { put("visitorData", it) } },
@@ -222,8 +223,8 @@ object InnerTube {
             .header("X-Origin", Account.ORIGIN)
             .header("Referer", Account.ORIGIN + "/")
             .header("X-Goog-AuthUser", "0")
-            .header("X-Youtube-Client-Name", "1")
-            .header("X-Youtube-Client-Version", Account.clientVersion())
+            .header("X-Youtube-Client-Name", if (mobile) "2" else "1")
+            .header("X-Youtube-Client-Version", if (mobile) MOBILE_VERSION else Account.clientVersion())
             .apply { if (!anonymous) Account.visitorData()?.let { header("X-Goog-Visitor-Id", it) } }
             .build()
     }
@@ -239,48 +240,102 @@ object InnerTube {
         }
     }
 
-    /** Superseded feed/search/country requests cancel their OkHttp calls, not just the UI job. */
-    private suspend fun readPost(endpoint: String, body: JSONObject, anonymous: Boolean = !Account.signedIn, country: String = "US"): JSONObject {
-        val call = Net.client.newCall(request(endpoint, body, anonymous, country))
-        return JSONObject(call.awaitText { response ->
-            if (!anonymous) Account.absorbSetCookies(response.headers("Set-Cookie"))
-        })
+    private const val MOBILE_VERSION = "2.20260901.01.00"
+    private const val MOBILE_TOKEN = "shinobi:mweb:"
+
+    /** Superseded reads cancel both the socket and backoff. Private library reads never
+     * fall back to anonymous data. Continuations remain on the client that issued them. */
+    internal suspend fun readPost(
+        endpoint: String, body: JSONObject, anonymous: Boolean = !Account.signedIn,
+        country: String = "US", publicRead: Boolean = true, mobileFirst: Boolean = false,
+        transport: suspend (Request) -> String = { request ->
+            Net.apiClient.newCall(request).awaitText { response ->
+                if (request.header("Cookie") != null) Account.absorbSetCookies(response.headers("Set-Cookie"))
+            }
+        },
+    ): JSONObject {
+        val token = body.optString("continuation")
+        val continuation = token.isNotEmpty()
+        val pinnedMobile = publicRead && token.startsWith(MOBILE_TOKEN)
+        val payload = JSONObject(body.toString())
+        if (pinnedMobile) payload.put("continuation", token.removePrefix(MOBILE_TOKEN))
+        return ReadRecovery.run { attempt ->
+            val mobile = if (continuation) pinnedMobile else publicRead && (mobileFirst || attempt > 0)
+            val guest = anonymous || mobile
+            val text = transport(request(endpoint, JSONObject(payload.toString()), guest, country, mobile))
+            val root = try { JSONObject(text) } catch (e: org.json.JSONException) { throw ServiceResponseException(e) }
+            root.optJSONObject("error")?.let { throw HttpFailure(it.optInt("code", 503)) }
+            // An HTML consent page or an API schema mismatch is not a successful feed.
+            if (!root.has("contents") && !root.has("onResponseReceivedActions") &&
+                !root.has("onResponseReceivedEndpoints") && !root.has("continuationContents")) {
+                throw ServiceResponseException()
+            }
+            if (mobile) root.walk { key, obj ->
+                if (key == "continuationCommand") obj.optString("token").takeIf { it.isNotEmpty() }
+                    ?.let { obj.put("token", MOBILE_TOKEN + it) }
+            }
+            root
+        }
     }
 
     // ── Reads ──────────────────────────────────────────────────────────────────
 
     suspend fun browse(browseId: String, continuation: String? = null): FeedPage = withContext(Dispatchers.IO) {
         val body = if (continuation != null) JSONObject().put("continuation", continuation) else JSONObject().put("browseId", browseId)
-        parseFeed(readPost("browse", body, anonymous = false))
+        parseFeed(readPost("browse", body, anonymous = false, publicRead = false))
     }
 
     suspend fun home(next: String? = null) = browse("FEwhat_to_watch", next)
 
-    /** YouTube's own home ranking, enriched locally rather than replaced by title searches. */
+    /** Prefer YouTube Home. Anonymous Home may legitimately be empty without watch cookies.
+     * Recovery searches are independent broad interests, never expansions of the latest like. */
     suspend fun discovery(next: String? = null): SearchPage = withContext(Dispatchers.IO) {
+        if (next?.startsWith(DISCOVERY_TOKEN) == true) return@withContext discoverySearches(next.removePrefix(DISCOVERY_TOKEN).toIntOrNull() ?: 0)
         val body = if (next == null) JSONObject().put("browseId", "FEwhat_to_watch") else JSONObject().put("continuation", next)
-        val root = try { readPost("browse", body) }
+        val root = try { kotlinx.coroutines.withTimeoutOrNull(10_000) { readPost("browse", body) } }
             catch (e: kotlinx.coroutines.CancellationException) { throw e }
-            catch (e: Exception) { if (next != null) throw e else JSONObject() }
-        val feed = parseFeed(root)
-        if (next == null && feed.videos.isEmpty()) {
-            // Anonymous Home can be empty without a watch cookie. Use a real public chart,
-            // not search results labelled as YouTube recommendations.
-            val trending = trending(AppSettings.trendingCountry)
-            SearchPage(trending.videos, trending.videos.filter { it.isShort }, null)
-        } else SearchPage(feed.videos, parseShorts(root), feed.next)
+            catch (e: Exception) { if (next != null) throw e else null }
+        val feed = root?.let(::parseFeed)
+        if (feed != null && feed.videos.isNotEmpty()) return@withContext SearchPage(feed.videos, parseShorts(root), feed.next)
+        if (next != null) return@withContext SearchPage(emptyList(), emptyList(), null)
+        // Do not make anonymous Home depend on a retired or country-restricted Trending chart.
+        discoverySearches(0)
     }
 
-    /** Public regional chart. No account cookies: country must not be overridden by a session. */
+    private const val DISCOVERY_TOKEN = "shinobi:discovery:"
+    private val discoveryTopics = listOf("science technology", "music live", "cooking recipes", "travel nature", "gaming", "arts culture")
+
+    private suspend fun discoverySearches(page: Int): SearchPage = kotlinx.coroutines.supervisorScope {
+        val queries = discoveryTopics.drop(page * 3).take(3)
+        if (queries.isEmpty()) return@supervisorScope SearchPage(emptyList(), emptyList(), null)
+        val results = queries.map { query -> async {
+            try { Result.success(searchPage(query)) }
+            catch (e: kotlinx.coroutines.CancellationException) { throw e }
+            catch (e: Exception) { Result.failure<SearchPage>(e) }
+        } }.map { it.await() }
+        val pages = results.mapNotNull { it.getOrNull() }
+        if (pages.all { it.videos.isEmpty() && it.shorts.isEmpty() }) {
+            throw (results.firstNotNullOfOrNull { it.exceptionOrNull() } ?: EmptyFeedException())
+        }
+        // Round robin preserves upstream rank and gives each broad category equal exposure.
+        val videos = (0 until 20).flatMap { rank -> pages.mapNotNull { it.videos.getOrNull(rank) } }.distinctBy { it.id }
+        SearchPage(videos, pages.flatMap { it.shorts }.distinctBy { it.id },
+            if ((page + 1) * 3 < discoveryTopics.size) DISCOVERY_TOKEN + (page + 1) else null)
+    }
+
+    /** Public regional chart. No cookies; never substitute search results for Trending. */
     suspend fun trending(country: String): FeedPage = withContext(Dispatchers.IO) {
         require(country in java.util.Locale.getISOCountries())
-        val root = readPost("browse", JSONObject().put("browseId", "FEtrending")
-            .put("params", "4gIOGgxtb3N0X3BvcHVsYXI%3D"), anonymous = true, country = country)
-        parseTrending(root)
+        val body = JSONObject().put("browseId", "FEtrending")
+        val primary = parseTrending(readPost("browse", body, anonymous = true, country = country))
+        if (primary.videos.isNotEmpty()) primary
+        else parseTrending(readPost("browse", body, anonymous = true, country = country, mobileFirst = true))
     }
 
     internal fun parseTrending(root: JSONObject): FeedPage {
-        val tabs = root.optJSONObject("contents")?.optJSONObject("twoColumnBrowseResultsRenderer")?.optJSONArray("tabs")
+        val contents = root.optJSONObject("contents")
+        val tabs = (contents?.optJSONObject("twoColumnBrowseResultsRenderer")
+            ?: contents?.optJSONObject("singleColumnBrowseResultsRenderer"))?.optJSONArray("tabs")
         val selected = (0 until (tabs?.length() ?: 0)).mapNotNull { tabs?.optJSONObject(it)?.optJSONObject("tabRenderer") }
             .firstOrNull { it.optBoolean("selected") }?.optJSONObject("content")
         // Do not accidentally traverse unselected tabs, account menus or unrelated sidebars.

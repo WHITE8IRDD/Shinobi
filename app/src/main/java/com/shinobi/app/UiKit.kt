@@ -367,8 +367,8 @@ fun VideoCard(video: VideoItem, onClick: () -> Unit, modifier: Modifier = Modifi
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(
-                    video.title,
-                    style = androidx.compose.ui.text.TextStyle(textDirection = androidx.compose.ui.text.style.TextDirection.Content),
+                    BidiText.clean(video.title),
+                    style = androidx.compose.ui.text.TextStyle(textDirection = androidx.compose.ui.text.style.TextDirection.Content, textAlign = if (Loc.isRtl) androidx.compose.ui.text.style.TextAlign.Right else androidx.compose.ui.text.style.TextAlign.Left),
                     fontWeight = FontWeight.Bold,
                     fontSize = 16.sp,
                     lineHeight = 20.sp,
@@ -408,7 +408,7 @@ fun VideoRow(video: VideoItem, onClick: () -> Unit, trailing: (@Composable () ->
         }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
-            Text(video.title, style = androidx.compose.ui.text.TextStyle(textDirection = androidx.compose.ui.text.style.TextDirection.Content), fontWeight = FontWeight.Bold, fontSize = 14.sp, lineHeight = 18.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(BidiText.clean(video.title), style = androidx.compose.ui.text.TextStyle(textDirection = androidx.compose.ui.text.style.TextDirection.Content, textAlign = if (Loc.isRtl) androidx.compose.ui.text.style.TextAlign.Right else androidx.compose.ui.text.style.TextAlign.Left), fontWeight = FontWeight.Bold, fontSize = 14.sp, lineHeight = 18.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Spacer(Modifier.height(4.dp))
             Text(
                 metaLine(video.channel, video.views, null),
@@ -528,7 +528,7 @@ fun PillButton(text: String, onClick: () -> Unit, icon: ImageVector? = null, mod
             Icon(icon, null, tint = c.onPrimary, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(7.dp))
         }
-        Text(text, color = c.onPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+        Text(text, color = c.onPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp, maxLines = 1, softWrap = false)
     }
 }
 
@@ -550,7 +550,7 @@ fun TonalPillButton(text: String, onClick: () -> Unit, icon: ImageVector? = null
             Icon(icon, null, tint = c.primary, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(7.dp))
         }
-        Text(text, color = c.onSurface, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+        Text(text, color = c.onSurface, fontWeight = FontWeight.Bold, fontSize = 14.sp, maxLines = 1, softWrap = false)
     }
 }
 
@@ -579,7 +579,7 @@ fun FeatureBentoCard(
         ) {
             Icon(icon, contentDescription = null, tint = c.onPrimaryContainer, modifier = Modifier.size(20.dp))
         }
-        Text(title, fontWeight = FontWeight.ExtraBold, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(title, fontWeight = FontWeight.ExtraBold, fontSize = 15.sp, lineHeight = 20.sp)
         Text(body, color = c.onSurfaceVariant, fontSize = 12.5.sp, lineHeight = 17.sp, fontWeight = FontWeight.Medium)
     }
 }

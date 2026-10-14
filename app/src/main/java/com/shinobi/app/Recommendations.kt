@@ -310,6 +310,7 @@ class PersonalizedHomeState(
         val topic = selectedTopic
         val requested = if (topic != null) listOf(HomeSource(topic, RecommendationMixer.Kind.Search)) else buildList {
             add(HomeSource("discovery", RecommendationMixer.Kind.Discovery))
+            add(HomeSource("shorts", RecommendationMixer.Kind.Discovery))
             history.forEach { add(HomeSource(it.id, RecommendationMixer.Kind.History)) }
             likes.forEach { add(HomeSource(it.id, RecommendationMixer.Kind.Like)) }
             // A like already present in history is moved into the bounded like bucket.
@@ -327,19 +328,16 @@ class PersonalizedHomeState(
 
     fun loadMore() {
         if (loading || !hasMore || error != null) return
-        load(sources.filter { it.next != null }, append = true, topicOnly = selectedTopic != null)
+        load(sources.filter { it.next != null && (selectedTopic != null || it.kind == RecommendationMixer.Kind.Discovery) }, append = true, topicOnly = selectedTopic != null)
     }
 
     private suspend fun fetch(source: HomeSource): Loaded {
         val page = loadSource?.invoke(source) ?: when (source.kind) {
             RecommendationMixer.Kind.Discovery -> {
-                val discovery = InnerTube.discovery(source.next)
-                if (source.next == null && discovery.shorts.isEmpty()) {
-                    val extra = try { InnerTube.searchPage("#shorts") }
-                        catch (e: kotlinx.coroutines.CancellationException) { throw e }
-                        catch (_: Exception) { null }
-                    discovery.copy(shorts = extra?.shorts.orEmpty() + extra?.videos.orEmpty().filter { it.isShort })
-                } else discovery
+                if (source.key == "shorts") {
+                    val page = InnerTube.searchPage("#shorts", source.next)
+                    SearchPage(emptyList(), (page.shorts + page.videos.filter { it.isShort }).distinctBy { it.id }, null)
+                } else InnerTube.discovery(source.next)
             }
             RecommendationMixer.Kind.Search -> InnerTube.searchPage(source.key, source.next)
             else -> {
@@ -360,14 +358,17 @@ class PersonalizedHomeState(
             if (append) videos.map { it.id } + shorts.map { it.id } else emptyList()
         job = scope.launch {
             try {
-                val loaded = coroutineScope {
+                val results = coroutineScope {
                     requested.map { source -> async(Dispatchers.IO) {
-                        try { fetch(source) } catch (e: kotlinx.coroutines.CancellationException) { throw e }
-                        catch (_: Exception) { null }
-                    } }.awaitAll().filterNotNull()
+                        try { Result.success(fetch(source)) } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+                        catch (e: Exception) { Result.failure<Loaded>(e) }
+                    } }.awaitAll()
                 }
                 kotlinx.coroutines.currentCoroutineContext().ensureActive()
-                if (loaded.isEmpty()) throw java.io.IOException(Loc.t("Couldn't reach YouTube"))
+                val loaded = results.mapNotNull { it.getOrNull() }
+                if (loaded.isEmpty() || (!append && loaded.all { it.page.videos.isEmpty() && it.page.shorts.isEmpty() })) {
+                    throw (results.firstNotNullOfOrNull { it.exceptionOrNull() } ?: EmptyFeedException())
+                }
                 val ranked = kotlinx.coroutines.withContext(Dispatchers.Default) {
                     fun rank(short: Boolean): List<VideoItem> {
                         val inputs = loaded.map { (src, page) ->
