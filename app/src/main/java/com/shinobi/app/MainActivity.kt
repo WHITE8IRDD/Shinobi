@@ -333,9 +333,9 @@ fun ShinobiApp() {
                     scrollToTop = scrollToTop[Tab.Home] ?: 0,
                 )
                 Tab.Shorts -> ShortsScreen(
-                    feed = shortsFeed,
+                    state = shortsFeed,
                     player = player,
-                    contentPadding = contentPadding,
+                    bottomInset = stackBottom + NavHeight + 12.dp,
                     showSurface = !showPlayer && !showFullscreen && openChannel == null && openPlaylist == null,
                     onSearch = { tab = Tab.Search },
                 )
