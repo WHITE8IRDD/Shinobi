@@ -36,7 +36,7 @@ fun PlayerOptionsSheet(state: PlayerState, onDismiss: () -> Unit) {
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text(Loc.t("Loop"), Modifier.padding(vertical = 14.dp))
-                Switch(state.looping, state::setLooping)
+                Switch(state.looping, state::updateLooping)
             }
             Option(Loc.t(if (AudioOnly.enabled) "Video playback" else "Audio only / background playback")) {
                 state.setAudioOnly(!AudioOnly.enabled); onDismiss()

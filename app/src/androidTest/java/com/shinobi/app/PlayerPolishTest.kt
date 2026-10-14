@@ -10,6 +10,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.unit.dp
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.*
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.tensorflow.lite.Interpreter
@@ -18,6 +19,7 @@ import java.nio.ByteOrder
 
 class PlayerPolishTest {
     @get:Rule val compose = createComposeRule()
+    @Before fun english() { Loc.choose("en") }
 
     @Test fun fullscreenSeekBarAndOptionsAreVisibleOnEntry() {
         compose.setContent {

@@ -289,20 +289,21 @@ class ShortsFeedState(private val scope: CoroutineScope) {
             }
         }.awaitAll()
 
-        val combined = LinkedHashMap<String, VideoItem>()
         val disliked = LocalHistory.dislikedIds
-        val maxLen = pages.maxOfOrNull { it.second.size } ?: 0
-        for (i in 0 until maxLen) {
-            for ((_, list, _) in pages) {
-                val item = list.getOrNull(i) ?: continue
-                if (item.id.isNotBlank() && item.id !in disliked) {
-                    combined.putIfAbsent(item.id, item.copy(isShort = true))
-                }
+        val seeds = RecommendationMixer.diverseSeeds(
+            LocalHistory.likedVideos.take(8) + LocalHistory.entries.filter { it.watchedMs >= 5_000 }.take(16).map { it.video }, 2,
+        )
+        val related = if (selectedTopic != null) emptyList() else seeds.map { seed ->
+            async(Dispatchers.IO) {
+                try { InnerTube.related(seed.id).videos.filter { it.isShort } }
+                catch (cancel: kotlinx.coroutines.CancellationException) { throw cancel }
+                catch (_: Exception) { emptyList() }
             }
-        }
+        }.awaitAll()
+        val mixed = ShortsMixer.mix(pages.map { it.second } + related, disliked)
         val next = pages.firstNotNullOfOrNull { (q, _, tok) -> tok?.let { q to it } }
-        if (combined.isEmpty()) throw java.io.IOException(Loc.t("Couldn't load Shorts"))
-        ShortsMixer.mix(pages.map { it.second }, disliked) to next
+        if (mixed.isEmpty()) throw java.io.IOException(Loc.t("Couldn't load Shorts"))
+        mixed to next
     }
 }
 
@@ -524,7 +525,7 @@ fun ShortsScreen(
     }
 
     // Wait for the current item to actually land in the service before replacing the next
-    // playlist slot. repeat-one keeps a Short looping rather than auto-advancing the pager.
+    // playlist slot. The service loops at the item boundary without advancing the pager.
     LaunchedEffect(currentShort?.id, player.loading, player.current?.id, shorts.size, showSurface) {
         if (showSurface && !player.loading && player.current?.id == currentShort?.id) {
             player.preloadShort(shorts.getOrNull(pagerState.settledPage + 1))

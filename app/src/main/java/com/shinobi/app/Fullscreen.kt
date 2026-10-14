@@ -41,26 +41,30 @@ class OrientationController(private val activity: Activity) {
 
     private var forced by mutableStateOf<Forced?>(null)
     private var playerOpen = false
+    private var physicalLandscape: Boolean? = null
 
     private val listener = object : OrientationEventListener(activity) {
         override fun onOrientationChanged(degrees: Int) {
             if (degrees == ORIENTATION_UNKNOWN) return
             val physicallyLandscape = degrees in 60..120 || degrees in 240..300
             val physicallyPortrait = degrees <= 30 || degrees >= 330
+            if (physicallyLandscape) physicalLandscape = true
+            else if (physicallyPortrait) physicalLandscape = false
             when {
                 // Only release a forced landscape when auto-rotate is on; with the rotation
                 // lock on, releasing would snap straight back to portrait.
                 forced == Forced.Landscape && physicallyLandscape && autoRotateOn() -> forced = null
                 forced == Forced.Portrait && physicallyPortrait -> forced = null
             }
+            if (physicallyLandscape || physicallyPortrait) apply()
         }
     }
 
     private fun autoRotateOn() =
         Settings.System.getInt(activity.contentResolver, Settings.System.ACCELEROMETER_ROTATION, 0) == 1
 
-    fun enterFullscreen() { forced = Forced.Landscape }
-    fun exitFullscreen() { forced = Forced.Portrait }
+    fun enterFullscreen() { forced = Forced.Landscape; apply() }
+    fun exitFullscreen() { forced = Forced.Portrait; apply() }
 
     fun setPlayerOpen(open: Boolean) {
         playerOpen = open
@@ -69,19 +73,29 @@ class OrientationController(private val activity: Activity) {
     }
 
     fun apply() {
-        activity.requestedOrientation = when {
+        val requested = when {
             !playerOpen -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
             forced == Forced.Landscape -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
             forced == Forced.Portrait -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+            autoRotateOn() && physicalLandscape == true -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            autoRotateOn() && physicalLandscape == false -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
             else -> ActivityInfo.SCREEN_ORIENTATION_USER
         }
+        if (activity.requestedOrientation != requested) activity.requestedOrientation = requested
     }
 
     @Composable
     fun Bind(playerOpen: Boolean) {
-        DisposableEffect(Unit) {
-            if (listener.canDetectOrientation()) listener.enable()
-            onDispose { listener.disable() }
+        val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+        DisposableEffect(playerOpen, lifecycle) {
+            fun update() {
+                if (playerOpen && lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) && listener.canDetectOrientation()) listener.enable()
+                else listener.disable()
+            }
+            val observer = androidx.lifecycle.LifecycleEventObserver { _, _ -> update() }
+            lifecycle.addObserver(observer)
+            update()
+            onDispose { lifecycle.removeObserver(observer); listener.disable() }
         }
         LaunchedEffect(playerOpen, forced) { setPlayerOpen(playerOpen) }
     }

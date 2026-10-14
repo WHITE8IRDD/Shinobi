@@ -159,7 +159,7 @@ class PlayerState(private val scope: CoroutineScope) {
         inShortsMode = true
         expanded = false
         fullscreen = false
-        controller?.repeatMode = Player.REPEAT_MODE_ONE
+        controller?.repeatMode = Player.REPEAT_MODE_OFF
         if (current?.id == shortItem.id && error == null) {
             if (controller?.isPlaying == false) controller?.play()
             return
@@ -182,9 +182,9 @@ class PlayerState(private val scope: CoroutineScope) {
 
     var looping by mutableStateOf(false)
         private set
-    fun setLooping(value: Boolean) {
+    fun updateLooping(value: Boolean) {
         looping = value
-        controller?.repeatMode = if (value || inShortsMode) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
+        controller?.repeatMode = if (value && !inShortsMode) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
     }
 
     /** Stops Shorts playback when leaving the Shorts tab so no mini-player is left behind. */
@@ -207,6 +207,10 @@ class PlayerState(private val scope: CoroutineScope) {
         Log.i("ShinobiTime", "open ${item.id}")
         if (startPlayback) Net.prewarmMediaConnection()
         current = item
+        if (known.size > 128) {
+            val keep = queue.mapTo(mutableSetOf(item.id)) { it.id }
+            known.keys.filter { it !in keep }.take(known.size - 128).forEach(known::remove)
+        }
         details = null
         error = null
         firstFrameRendered = false
@@ -278,6 +282,7 @@ class PlayerState(private val scope: CoroutineScope) {
                 .setTitle(item.title)
                 .setArtist(item.channel)
                 .setArtworkUri(item.thumbnail?.toUri())
+                .setExtras(android.os.Bundle().apply { putBoolean("shinobi_short", inShortsMode && item.isShort) })
                 .build(),
         )
         .build()
@@ -765,7 +770,7 @@ class PlayerState(private val scope: CoroutineScope) {
 
         override fun onRenderedFirstFrame() {
             Log.i("ShinobiTime", "first frame +${android.os.SystemClock.elapsedRealtime() - openedAt}ms")
-            firstFrameRendered = true
+            if (controller?.currentMediaItem?.mediaId == current?.id) firstFrameRendered = true
         }
 
         override fun onPlayerError(e: PlaybackException) {
@@ -783,7 +788,7 @@ class PlayerState(private val scope: CoroutineScope) {
     }
 
     private fun takeVideoSize(videoSize: VideoSize) {
-        if (videoSize.width <= 0 || videoSize.height <= 0) return
+        if (videoSize.width <= 0 || videoSize.height <= 0 || controller?.currentMediaItem?.mediaId != current?.id) return
         videoAspect = videoSize.width * videoSize.pixelWidthHeightRatio / videoSize.height
         aspectFromFrames = true
         // Auto switches resolution mid-play; the label follows the real frames.

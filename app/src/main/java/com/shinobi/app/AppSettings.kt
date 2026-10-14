@@ -34,7 +34,7 @@ object AppSettings {
     }
     var sensitiveFilter by mutableStateOf(false)
         private set
-    fun setSensitiveFilter(value: Boolean) {
+    fun updateSensitiveFilter(value: Boolean) {
         sensitiveFilter = value
         prefs?.edit()?.putBoolean("sensitive_filter", value)?.apply()
         if (value) FeedPreview.stop()

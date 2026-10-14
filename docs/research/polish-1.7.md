@@ -43,12 +43,12 @@ subgroup/error analysis and agreed precision/recall criteria before wider defaul
 ## Playback and performance
 - Media3 1.10.1 playlist preloading: https://github.com/androidx/media/blob/1.10.1/libraries/exoplayer/src/main/java/androidx/media3/exoplayer/ExoPlayer.java
 - One service player; next Short is a playlist item, not an offscreen decoder. Preload target
-  3 seconds. Current Short loops; swiping commits only at settledPage. Thumbnails cover
+  3 seconds. Current Short loops at a pause-at-item-end boundary (repeat-one would preload itself); swiping commits only at settledPage. Thumbnails cover
   stale frames until the new item's first rendered frame.
 - Stream extraction cache capped at 48 items; at most four queued prefetch IDs, deduplicated.
 - Existing orientation policy follows system auto-rotate and preserves manual entry while
   rotation lock is on. Fit preserves aspect; Fill crops without stretching.
-- Scrub preview shows time and chapter title; chapters come from the extractor. It does not
+- Scrub preview shows time, chapter title and chapter thumbnail when provided; chapters come from the extractor. It does not
   pretend to be a decoded frame/storyboard preview at every arbitrary timestamp.
 - Autoplay chooses a related video after the queue ends while the UI controller is alive.
   User queues, background service playback, captions, quality and PiP are retained.

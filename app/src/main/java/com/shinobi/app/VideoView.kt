@@ -262,7 +262,8 @@ fun VideoContent(
                 }
             }
         }
-        Box(Modifier.fillMaxSize().graphicsLayer { alpha = visibleAlpha * controlsAlpha() }) {
+        Box(Modifier.fillMaxSize().graphicsLayer { alpha = visibleAlpha * controlsAlpha() }
+            .then(if (!enabled) Modifier.clearAndSetSemantics {} else Modifier)) {
             Box(
                 Modifier.fillMaxSize().background(
                     Brush.verticalGradient(
@@ -350,6 +351,10 @@ fun VideoContent(
                 Column(Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(start = 14.dp, end = 8.dp, bottom = 6.dp)) {
                     var scrubPreview by remember { mutableStateOf<Long?>(null) }
                     if (scrubPreview != null) {
+                        val chapter = state.details?.chapters?.lastOrNull { it.startMs <= scrubPreview!! }
+                        chapter?.thumbnail?.let { url ->
+                            Thumbnail(url, Modifier.width(112.dp).height(63.dp), radius = 8)
+                        }
                         Text(
                             formatDuration(scrubPreview!!) + (state.details?.chapters?.lastOrNull { it.startMs <= scrubPreview!! }?.let { " · ${it.title}" } ?: ""),
                             color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1,
