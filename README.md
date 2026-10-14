@@ -1,5 +1,10 @@
 # Shinobi
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="branding/source/LOGO WHITE.png">
+  <img src="branding/source/1 BLACK LOGO.png" alt="Shinobi — S-ninja mark plus SHINOBI wordmark" width="600">
+</picture>
+
 **A free, open-source Android video player for YouTube.** Search, watch and organize videos without ads or an account. Optional Google sign-in adds your real YouTube feeds and sync; your private recent history and playback controls still work signed out.
 
 Shinobi is built with Kotlin, Jetpack Compose and AndroidX Media3. It is a community, sideload-first app—not an official YouTube or Google product.
