@@ -230,7 +230,7 @@ fun VideoContent(
                 // Under the (transparent until it has a frame) TextureView, so opening or
                 // re-attaching never shows a black void.
                 Thumbnail(state.current?.thumbnail, Modifier.fillMaxSize(), radius = 0)
-                LocalVideoSurface.current(Modifier.fillMaxSize())
+                LocalVideoSurface.current(Modifier.fillMaxSize().graphicsLayer { alpha = if (state.firstFrameRendered) 1f else 0f })
             }
             // Where the burst has got to, while the controls (and their scrubber) are hidden.
             Canvas(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(3.dp).graphicsLayer { alpha = peekAlpha }) {
@@ -919,7 +919,7 @@ private fun BoxScope.CaptionLine(state: PlayerState, fullscreen: Boolean, contro
         overflow = TextOverflow.Ellipsis,
         modifier = modifier
             .padding(horizontal = 20.dp, vertical = 4.dp)
-            .padding(bottom = if (controlsVisible) 52.dp else 18.dp)
+            .padding(bottom = if (controlsVisible) 96.dp else 18.dp)
             .clip(RoundedCornerShape(12.dp))
             .background(Color.Black.copy(alpha = 0.78f))
             .padding(horizontal = 12.dp, vertical = 7.dp),

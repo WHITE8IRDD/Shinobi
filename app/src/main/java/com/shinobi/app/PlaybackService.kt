@@ -125,20 +125,7 @@ class PlaybackService : MediaSessionService() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         player.setVideoFrameMetadataListener { _, releaseTimeNs, _, _ -> AvSync.onFrameReleased(releaseTimeNs) }
-        player.addListener(object : Player.Listener {
-            private fun isShort() = player.currentMediaItem?.mediaMetadata?.extras?.getBoolean("shinobi_short") == true
-            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-                // repeat-one would preload the SAME Short. Pause at the boundary instead,
-                // then restart it; repeat-off lets Media3 buffer the next playlist item.
-                player.pauseAtEndOfMediaItems = isShort()
-            }
-            override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
-                if (!playWhenReady && reason == Player.PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM && isShort()) {
-                    player.seekTo(0L)
-                    player.play()
-                }
-            }
-        })
+        player.addListener(ShortsLoopKeeper(player))
         sponsorSkipper = SponsorSkipper(player).also(player::addListener)
         player.addListener(SpeedKeeper(player))
         // Audio only is app-wide and kept; the UI applies it on connect, this covers a start
@@ -461,22 +448,42 @@ private class SponsorSkipper(private val player: ExoPlayer) : Player.Listener {
     /** Only the newest volume ramp may write to the player, so two skips can't fight. */
     private var rampGeneration = 0
 
+    @Volatile private var currentId: String? = null
+    private var requestedId: String? = null
+    private var retryAfter = 0L
+
     override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-        val id = mediaItem?.mediaId?.takeIf { it.isNotBlank() } ?: return
         if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT) return
-        // A new video is a new viewing: every segment may auto-skip once again.
+        currentId = mediaItem?.mediaId?.takeIf { it.isNotBlank() }
+        requestedId = null
+        retryAfter = 0L
         SponsorBlock.resetSpent()
         lastPositionMs = C.TIME_UNSET
-        startWatching(WATCH_INTERVAL_MS)
+        currentId?.let { if (SponsorBlock.enabled) loadSegments(it) }
+        if (player.isPlaying) startWatching(WATCH_INTERVAL_MS)
+    }
+
+    override fun onIsPlayingChanged(isPlaying: Boolean) {
+        if (isPlaying) startWatching(WATCH_INTERVAL_MS)
+        else {
+            main.removeCallbacks(watch)
+            watching = false
+            lastPositionMs = C.TIME_UNSET
+        }
+    }
+
+    private fun loadSegments(id: String) {
+        if (requestedId == id || android.os.SystemClock.elapsedRealtime() < retryAfter || released) return
+        requestedId = id
         io.execute {
-            if (released) return@execute
-            val segments = if (SponsorBlock.enabled) SponsorBlock.fetch(id) else emptyList()
+            if (released || currentId != id) return@execute
+            val segments = SponsorBlock.fetch(id)
             main.post {
-                if (released) return@post
+                if (released || currentId != id) return@post
+                requestedId = null
+                retryAfter = android.os.SystemClock.elapsedRealtime() + 60_000L
                 if (SponsorBlock.forUi.size >= 128) SponsorBlock.forUi.keys.firstOrNull()?.let(SponsorBlock.forUi::remove)
                 SponsorBlock.forUi[id] = segments
-                // Still the same item? (The user may have moved on during the lookup.)
-                if (player.currentMediaItem?.mediaId != id) return@post
                 val index = player.currentMediaItemIndex
                 segments.filter { it.action == SponsorBlock.Action.Auto }.forEach { segment ->
                     player.createMessage { _, _ -> skip(id, segment) }
@@ -484,8 +491,6 @@ private class SponsorSkipper(private val player: ExoPlayer) : Player.Listener {
                         .setPosition(index, segment.startMs)
                         .send()
                 }
-                // Segments may have arrived while playback already sat inside one (a resume,
-                // or a lookup that took a while): the watch must look at them right away.
                 lastPositionMs = C.TIME_UNSET
             }
         }
@@ -503,14 +508,15 @@ private class SponsorSkipper(private val player: ExoPlayer) : Player.Listener {
             // No item open (player idle, playback stopped): stop ticking until the next one.
             val id = player.currentMediaItem?.mediaId?.takeIf { it.isNotBlank() } ?: return
             val playing = player.isPlaying
-            // While paused the watch only has to notice playback starting again, so it is slow.
-            startWatching(if (playing) WATCH_INTERVAL_MS else PAUSED_INTERVAL_MS)
             if (!playing) {
                 lastPositionMs = C.TIME_UNSET
                 return
             }
+            startWatching(WATCH_INTERVAL_MS)
+            if (!SponsorBlock.enabled) return
             val position = player.currentPosition
             val segments = SponsorBlock.cached(id)
+            if (segments == null) loadSegments(id)
             val entered = segments?.firstOrNull { segment ->
                 segment.action == SponsorBlock.Action.Auto && !SponsorBlock.isSpent(segment) &&
                     segment.contains(position) &&
@@ -537,11 +543,12 @@ private class SponsorSkipper(private val player: ExoPlayer) : Player.Listener {
         Log.i("Shinobi", "SponsorBlock: skipping ${segment.category.key} ${segment.startMs}-$spanEnd in $videoId")
         // Jump first, fade in after: the segment is gone from the very first frame it is
         // detected in, and the audio dip hides the seam.
+        val volume = player.volume
         player.volume = 0f
-        player.seekTo(spanEnd)
+        player.seekTo(spanEnd.coerceAtMost(player.duration.takeIf { it > 0 } ?: spanEnd))
         SponsorBlock.lastSkip = SponsorBlock.Skip(videoId, segment.copy(endMs = spanEnd))
         lastPositionMs = spanEnd
-        ramp(to = 1f, durationMs = 250)
+        ramp(to = volume, durationMs = 250)
     }
 
     /** Fades the player's volume to [to] from wherever it is now. */
@@ -564,7 +571,22 @@ private class SponsorSkipper(private val player: ExoPlayer) : Player.Listener {
         /** While playback runs: fine enough that a skip is never more than a couple of frames late. */
         const val WATCH_INTERVAL_MS = 100L
         /** While paused: cheap, but still quick to pick playback back up. */
-        const val PAUSED_INTERVAL_MS = 400L
+
+    }
+}
+
+/** Loop at the boundary without repeat-one, which would preload the same item. */
+@OptIn(UnstableApi::class)
+internal class ShortsLoopKeeper(private val player: ExoPlayer) : Player.Listener {
+    private fun isShort() = player.currentMediaItem?.mediaMetadata?.extras?.getBoolean("shinobi_short") == true
+    override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+        player.pauseAtEndOfMediaItems = isShort()
+    }
+    override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+        if (!playWhenReady && reason == Player.PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM && isShort()) {
+            player.seekTo(0L)
+            player.play()
+        }
     }
 }
 
