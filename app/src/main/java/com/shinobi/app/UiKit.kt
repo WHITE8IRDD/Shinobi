@@ -40,6 +40,10 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
@@ -528,8 +532,45 @@ fun PillButton(text: String, onClick: () -> Unit, icon: ImageVector? = null, mod
             Icon(icon, null, tint = c.onPrimary, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(7.dp))
         }
-        Text(text, color = c.onPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp, maxLines = 1, softWrap = false)
+        OneLineFitText(text, color = c.onPrimary, fontWeight = FontWeight.Bold, baseSize = 14.sp, modifier = Modifier.weight(1f, fill = false))
     }
+}
+
+/**
+ * Label that shrinks its own font (never below [minSize]) until the text fits,
+ * instead of clipping at enlarged system text sizes. Single-line by default;
+ * pass a larger [maxLines] for titles that should wrap naturally first and only
+ * shrink if they still overflow. The text stays as large as fits.
+ */
+@Composable
+fun OneLineFitText(
+    text: String,
+    color: Color,
+    fontWeight: FontWeight,
+    baseSize: androidx.compose.ui.unit.TextUnit,
+    minSize: androidx.compose.ui.unit.TextUnit = 10.sp,
+    maxLines: Int = 1,
+    textAlign: TextAlign = TextAlign.Center,
+    lineHeight: androidx.compose.ui.unit.TextUnit = androidx.compose.ui.unit.TextUnit.Unspecified,
+    modifier: Modifier = Modifier,
+) {
+    var size by remember(text) { mutableStateOf(baseSize) }
+    Text(
+        text,
+        color = color,
+        fontWeight = fontWeight,
+        fontSize = size,
+        lineHeight = lineHeight,
+        maxLines = maxLines,
+        softWrap = maxLines > 1,
+        textAlign = textAlign,
+        modifier = modifier,
+        onTextLayout = { result ->
+            if (result.hasVisualOverflow && size > minSize) {
+                size = ((size.value * 0.92f).coerceAtLeast(minSize.value)).sp
+            }
+        },
+    )
 }
 
 @Composable
@@ -550,7 +591,7 @@ fun TonalPillButton(text: String, onClick: () -> Unit, icon: ImageVector? = null
             Icon(icon, null, tint = c.primary, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(7.dp))
         }
-        Text(text, color = c.onSurface, fontWeight = FontWeight.Bold, fontSize = 14.sp, maxLines = 1, softWrap = false)
+        OneLineFitText(text, color = c.onSurface, fontWeight = FontWeight.Bold, baseSize = 14.sp, modifier = Modifier.weight(1f, fill = false))
     }
 }
 
@@ -579,7 +620,15 @@ fun FeatureBentoCard(
         ) {
             Icon(icon, contentDescription = null, tint = c.onPrimaryContainer, modifier = Modifier.size(20.dp))
         }
-        Text(title, fontWeight = FontWeight.ExtraBold, fontSize = 15.sp, lineHeight = 20.sp)
+        OneLineFitText(
+            title,
+            color = c.onSurface,
+            fontWeight = FontWeight.ExtraBold,
+            baseSize = 15.sp,
+            maxLines = 4,
+            textAlign = TextAlign.Start,
+            lineHeight = 20.sp,
+        )
         Text(body, color = c.onSurfaceVariant, fontSize = 12.5.sp, lineHeight = 17.sp, fontWeight = FontWeight.Medium)
     }
 }

@@ -14,6 +14,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.selects.select
 
 /** Seeds derived from the user's recent watch history and search activity. */
 data class TasteSeeds(
@@ -358,39 +359,30 @@ class PersonalizedHomeState(
             if (append) videos.map { it.id } + shorts.map { it.id } else emptyList()
         job = scope.launch {
             try {
-                val results = coroutineScope {
-                    requested.map { source -> async(Dispatchers.IO) {
+                // Fresh loads publish each source as it arrives, so the first usable cards
+                // appear without waiting for the slowest source (each has its own
+                // eight-second deadline). Pagination keeps one atomic update so appended
+                // pages never reorder or duplicate mid-scroll.
+                val results = mutableListOf<Result<Loaded>>()
+                coroutineScope {
+                    val pending = requested.map { source -> async(Dispatchers.IO) {
                         try { Result.success(fetch(source)) } catch (e: kotlinx.coroutines.CancellationException) { throw e }
                         catch (e: Exception) { Result.failure<Loaded>(e) }
-                    } }.awaitAll()
+                    } }.toMutableList()
+                    if (append) {
+                        results += pending.awaitAll()
+                    } else while (pending.isNotEmpty()) {
+                        select<Unit> { pending.forEach { deferred -> deferred.onAwait { r -> results += r; pending -= deferred } } }
+                        ensureActive()
+                        publish(results, excluded, append = false, topicOnly = topicOnly, final = false)
+                    }
                 }
-                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                ensureActive()
                 val loaded = results.mapNotNull { it.getOrNull() }
                 if (loaded.isEmpty() || (!append && loaded.all { it.page.videos.isEmpty() && it.page.shorts.isEmpty() })) {
                     throw (results.firstNotNullOfOrNull { it.exceptionOrNull() } ?: EmptyFeedException())
                 }
-                val ranked = kotlinx.coroutines.withContext(Dispatchers.Default) {
-                    fun rank(short: Boolean): List<VideoItem> {
-                        val inputs = loaded.map { (src, page) ->
-                            val items = if (short) page.shorts + page.videos.filter { it.isShort } else page.videos.filterNot { it.isShort }
-                            RecommendationMixer.Source(src.key, src.kind, items)
-                        }
-                        return if (topicOnly) inputs.flatMap { it.videos }.filter { it.id !in excluded }.distinctBy { it.id }.take(30)
-                        else RecommendationMixer.mix(inputs, excluded)
-                    }
-                    rank(false) to rank(true)
-                }
-                sources = loaded.map { it.source }
-                if (append) {
-                    videos = (videos + ranked.first).distinctBy { it.id }.take(240)
-                    shorts = (shorts + ranked.second).distinctBy { it.id }.take(60)
-                } else {
-                    videos = ranked.first
-                    shorts = ranked.second
-                }
-                exhausted = ranked.first.isEmpty() && ranked.second.isEmpty()
-                if (videos.isEmpty() && shorts.isEmpty()) error = Loc.t("No suggestions available. Try again later.")
-                generation++
+                publish(results, excluded, append = append, topicOnly = topicOnly, final = true)
                 // No speculative stream extraction for every feed refresh: it competes with playback.
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
@@ -403,6 +395,43 @@ class PersonalizedHomeState(
                     refreshing = false
                 }
             }
+        }
+    }
+
+    /** Rank [results] off the UI thread and publish the cards. A partial publish skips
+     * empty rankings and all terminal bookkeeping, so early cards never wipe visible
+     * content, flash an empty state, or reset scroll; the final publish settles
+     * sources, exhaustion, errors and generation. */
+    private suspend fun publish(results: List<Result<Loaded>>, excluded: Set<String>, append: Boolean, topicOnly: Boolean, final: Boolean) {
+        val loaded = results.mapNotNull { it.getOrNull() }
+        if (loaded.isEmpty()) return
+        val ranked = kotlinx.coroutines.withContext(Dispatchers.Default) {
+            fun rank(short: Boolean): List<VideoItem> {
+                val inputs = loaded.map { (src, page) ->
+                    val items = if (short) page.shorts + page.videos.filter { it.isShort } else page.videos.filterNot { it.isShort }
+                    RecommendationMixer.Source(src.key, src.kind, items)
+                }
+                return if (topicOnly) inputs.flatMap { it.videos }.filter { it.id !in excluded }.distinctBy { it.id }.take(30)
+                else RecommendationMixer.mix(inputs, excluded)
+            }
+            // A cancelled older request must never publish over a newer request's cards.
+            ensureActive()
+            rank(false) to rank(true)
+        }
+        kotlinx.coroutines.currentCoroutineContext().ensureActive()
+        if (!final && ranked.first.isEmpty() && ranked.second.isEmpty()) return
+        sources = loaded.map { it.source }
+        if (append) {
+            videos = (videos + ranked.first).distinctBy { it.id }.take(240)
+            shorts = (shorts + ranked.second).distinctBy { it.id }.take(60)
+        } else {
+            videos = ranked.first
+            shorts = ranked.second
+        }
+        if (final) {
+            exhausted = ranked.first.isEmpty() && ranked.second.isEmpty()
+            if (videos.isEmpty() && shorts.isEmpty()) error = Loc.t("No suggestions available. Try again later.")
+            generation++
         }
     }
 }

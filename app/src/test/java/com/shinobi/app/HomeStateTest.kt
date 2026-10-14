@@ -91,4 +91,28 @@ class HomeStateTest {
         assertFalse(state.refreshing)
     }
 
+    @Test fun freshLoadPublishesFastSourceBeforeSlowSourceFinishes() = runTest {
+        // Empty history: refresh() loads exactly the discovery + shorts sources.
+        val state = PersonalizedHomeState(this) { request ->
+            if (request.key == "discovery") {
+                withContext(Dispatchers.IO) { delay(5_000) }
+                SearchPage(listOf(video("slow")), emptyList(), null)
+            } else {
+                SearchPage(emptyList(), listOf(video("fast")), null)
+            }
+        }
+        state.refresh()
+        // Real dispatchers back the IO fetches; poll briefly for the fast arrival.
+        repeat(30) {
+            if (state.shorts.isNotEmpty()) return@repeat
+            withContext(Dispatchers.Default) { delay(100) }
+        }
+        assertEquals(listOf("fast"), state.shorts.map { it.id })
+        assertTrue(state.loading)
+        coroutineContext[Job]!!.children.toList().forEach { it.join() }
+        assertEquals(listOf("slow"), state.videos.map { it.id })
+        assertEquals(listOf("fast"), state.shorts.map { it.id })
+        assertFalse(state.loading)
+    }
+
 }
