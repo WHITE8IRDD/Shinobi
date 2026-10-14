@@ -304,6 +304,39 @@ private fun CategoryRow(category: SponsorBlock.Category) {
     }
 }
 
+// ── About (inside the account sheet) ───────────────────────────────────────────
+
+/**
+ * What this is, and the promises it keeps. The zero-ads policy is a product decision, not a
+ * setting: there is nothing to switch off, so the sheet says so where the switches would be.
+ */
+@Composable
+fun AboutSettings() {
+    val c = MaterialTheme.colorScheme
+    Column(Modifier.fillMaxWidth()) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Shinobi", fontFamily = RoundedHeavy, fontWeight = FontWeight.ExtraBold, fontSize = 18.sp)
+            Spacer(Modifier.width(8.dp))
+            Text("Version ${BuildConfig.VERSION_NAME}", color = c.onSurfaceVariant, fontSize = 13.sp)
+        }
+        Spacer(Modifier.height(10.dp))
+        Text(
+            "No ads, no ad SDKs, no analytics and no trackers — in this build and every other. " +
+                "There is nothing to disable here, and nothing that could be switched on later: " +
+                "the project's build refuses to compile with an advertising or tracking SDK in it.\n\n" +
+                "Sponsor reads inside a video are skipped automatically where the community has " +
+                "submitted them; the SponsorBlock controls above decide how.",
+            color = c.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp,
+        )
+        Spacer(Modifier.height(10.dp))
+        Text(
+            "Free software under the GNU GPL version 3, built with NewPipeExtractor, " +
+                "AndroidX Media3 and Jetpack Compose. Not affiliated with YouTube or Google.",
+            color = c.onSurfaceVariant, fontSize = 11.5.sp, lineHeight = 16.sp,
+        )
+    }
+}
+
 // ── Appearance (inside the account sheet) ──────────────────────────────────────
 
 /** Light/dark mode plus every Shinobi theme (and wallpaper colors on Android 12+). */

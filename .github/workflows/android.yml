@@ -5,6 +5,15 @@ on:
     branches: [main, "arena/**"]
   pull_request:
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag, e.g. draft-1 (leave empty to build only)"
+        required: false
+        default: ""
+      name:
+        description: "Release name, e.g. Draft 1"
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -99,3 +108,48 @@ jobs:
           path: app/build/outputs/apk/**/*.apk
           if-no-files-found: error
           retention-days: 14
+
+  # Publishing is explicit: run this workflow manually with a tag and a name and the APKs
+  # built by the job above are attached to a GitHub release. Nothing else publishes.
+  release:
+    if: github.event_name == 'workflow_dispatch' && inputs.tag != ''
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download the APKs this run just built
+        uses: actions/download-artifact@v4
+        with:
+          name: shinobi-apks
+          path: apks
+
+      - name: Publish the release with its APKs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+          NAME: ${{ inputs.name }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -e
+          NAME="${NAME:-Official release}"
+          SLUG="${NAME// /-}"
+          mkdir -p publish
+          cp apks/release/app-release.apk "publish/Shinobi-${SLUG}-release.apk"
+          cp apks/debug/app-debug.apk "publish/Shinobi-${SLUG}-debug.apk"
+          ls -l publish
+          cat > notes.md <<EOF
+          Built from the source at this tag by GitHub Actions, with unit tests and both
+          zero-ads guards passing in the same run.
+
+          **Install (sideload):** download \`Shinobi-${SLUG}-release.apk\`, open it on the phone
+          and allow installing from this source when Android asks. Android 8.0 (API 26) or newer
+          is required. The release build is signed with a locally generated key, so it installs
+          over any earlier Shinobi build and needs no account: search, playback, captions and
+          signed-out history work straight away.
+
+          \`Shinobi-${SLUG}-release.apk\` is the minified build made for daily use;
+          \`Shinobi-${SLUG}-debug.apk\` is the same code without minification, useful if a bug
+          needs logs.
+          EOF
+          gh release create "$TAG" --title "$NAME" --notes-file notes.md --target "$SHA" publish/*.apk
