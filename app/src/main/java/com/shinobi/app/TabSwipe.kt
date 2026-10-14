@@ -4,6 +4,9 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.awaitHorizontalTouchSlopOrCancellation
 import androidx.compose.foundation.gestures.horizontalDrag
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
@@ -24,8 +27,13 @@ import kotlin.math.sign
  * [onSwipe] gets `true` for a swipe towards the next tab and `false` for the previous one,
  * already corrected for right-to-left layouts, where the next tab lies to the left.
  */
-fun Modifier.tabSwipe(enabled: Boolean, rtl: Boolean, onSwipe: (forward: Boolean) -> Unit): Modifier =
-    if (!enabled) this else pointerInput(rtl, onSwipe) {
+@Composable
+fun Modifier.tabSwipe(enabled: Boolean, rtl: Boolean, onSwipe: (forward: Boolean) -> Unit): Modifier {
+    // The latest handler without restarting the gesture detector (and dropping a swipe in
+    // progress) every time the shell recomposes with a fresh lambda.
+    val handler by rememberUpdatedState(onSwipe)
+    if (!enabled) return this
+    return pointerInput(rtl) {
         val distanceToCommit = 72.dp.toPx()
         val speedToCommit = 1_100.dp.toPx() // per second: a quick flick commits from a short travel
         awaitEachGesture {
@@ -54,6 +62,7 @@ fun Modifier.tabSwipe(enabled: Boolean, rtl: Boolean, onSwipe: (forward: Boolean
             // Finger moving left reveals what lies to the right: the next tab in LTR, the
             // previous one in RTL.
             val towardsRight = travel < 0f
-            onSwipe(if (rtl) !towardsRight else towardsRight)
+            handler(if (rtl) !towardsRight else towardsRight)
         }
     }
+}

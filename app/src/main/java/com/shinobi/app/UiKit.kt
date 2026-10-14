@@ -4,7 +4,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -42,6 +41,7 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -550,10 +550,10 @@ fun PillButton(text: String, onClick: () -> Unit, icon: ImageVector? = null, mod
  * pass a larger [maxLines] for titles that should wrap naturally first and only
  * shrink if they still overflow. The text stays as large as fits.
  *
- * The size is measured from the available width on every layout, not nudged down over
- * successive frames: a label whose room is still growing (the nav pill's active tab
- * animates open) ends up at the size that fits the final width, not the smallest size
- * it passed through on the way.
+ * The size follows the room both ways: it shrinks while the text overflows, and when the
+ * room later grows (the nav pill's active tab animates open, so its label is first laid out
+ * in a sliver of its final width) it grows back in step, up to [baseSize], instead of
+ * staying at the smallest size it passed through on the way.
  */
 @Composable
 fun OneLineFitText(
@@ -567,40 +567,30 @@ fun OneLineFitText(
     lineHeight: androidx.compose.ui.unit.TextUnit = androidx.compose.ui.unit.TextUnit.Unspecified,
     modifier: Modifier = Modifier,
 ) {
-    val measurer = androidx.compose.ui.text.rememberTextMeasurer()
-    val baseStyle = androidx.compose.material3.LocalTextStyle.current
-    BoxWithConstraints(modifier) {
-        val maxWidth = constraints.maxWidth
-        val maxHeight = constraints.maxHeight
-        val size = remember(text, maxWidth, maxHeight, baseSize, minSize, maxLines, fontWeight, lineHeight, baseStyle, measurer) {
-            if (maxWidth == androidx.compose.ui.unit.Constraints.Infinity) return@remember baseSize
-            var candidate = baseSize.value
-            while (true) {
-                val result = measurer.measure(
-                    text,
-                    style = baseStyle.merge(
-                        androidx.compose.ui.text.TextStyle(fontSize = candidate.sp, fontWeight = fontWeight, lineHeight = lineHeight, textAlign = textAlign),
-                    ),
-                    maxLines = maxLines,
-                    softWrap = maxLines > 1,
-                    constraints = androidx.compose.ui.unit.Constraints(maxWidth = maxWidth, maxHeight = maxHeight),
-                )
-                if (!result.hasVisualOverflow || candidate <= minSize.value) break
-                candidate = (candidate * 0.94f).coerceAtLeast(minSize.value)
+    var size by remember(text) { mutableStateOf(baseSize) }
+    // The width the text last had to shrink for; wider room than this means it may grow.
+    var shrunkFor by remember(text) { mutableIntStateOf(0) }
+    Text(
+        text,
+        color = color,
+        fontWeight = fontWeight,
+        fontSize = size,
+        lineHeight = lineHeight,
+        maxLines = maxLines,
+        softWrap = maxLines > 1,
+        textAlign = textAlign,
+        modifier = modifier,
+        onTextLayout = { result ->
+            val room = result.layoutInput.constraints.maxWidth
+            if (result.hasVisualOverflow) {
+                if (size > minSize) size = ((size.value * 0.92f).coerceAtLeast(minSize.value)).sp
+                shrunkFor = room
+            } else if (size < baseSize && shrunkFor > 0 && room != androidx.compose.ui.unit.Constraints.Infinity && room > shrunkFor) {
+                size = (size.value * room / shrunkFor).coerceAtMost(baseSize.value).sp
+                shrunkFor = room
             }
-            candidate.sp
-        }
-        Text(
-            text,
-            color = color,
-            fontWeight = fontWeight,
-            fontSize = size,
-            lineHeight = lineHeight,
-            maxLines = maxLines,
-            softWrap = maxLines > 1,
-            textAlign = textAlign,
-        )
-    }
+        },
+    )
 }
 
 @Composable
