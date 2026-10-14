@@ -161,6 +161,9 @@ fun AccountSheet(onSignIn: () -> Unit, onSignedOut: () -> Unit, onDismiss: () ->
     val profile = Account.profile
     ModalBottomSheet(
         onDismissRequest = onDismiss,
+        // Opened to its full height (the Home logo lands here too): every settings section
+        // is one clean scroll, never a half-open sheet.
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         containerColor = c.surfaceContainerLow,
     ) {
         Column(

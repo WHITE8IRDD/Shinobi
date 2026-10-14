@@ -92,12 +92,17 @@ object FeedPreview {
     private var surface: Surface? = null
     private var job: Job? = null
 
-    /** Whether previews may play right now, per the setting and the connection. */
+    /**
+     * Whether previews may play right now, per the setting and the connection. On low-RAM
+     * phones (2–3 GB) previews are off unless the user explicitly chose "Always": the
+     * second decoder they keep warm is exactly what those devices cannot spare.
+     */
     fun allowed(): Boolean = when (AppSettings.feedPreviews) {
         OFF -> false
         WIFI -> Net.isUnmetered()
-        else -> true
-    } && !suppressed()
+        ALWAYS -> true
+        else -> false
+    } && !(DeviceRam.lowRam && AppSettings.feedPreviews != ALWAYS) && !suppressed()
 
     /**
      * The card in view changed. [videoId] null (or the same id) is a no-op; otherwise the

@@ -61,7 +61,10 @@ class PlaybackService : MediaSessionService() {
         super.onCreate()
         // The video renderer runs on AvSync's clock offset (TextureView lip sync).
         val sources = YouTubeMediaSourceFactory(this)
-        val player = ExoPlayer.Builder(this, SyncedRenderersFactory(this))
+        // Decoder fallback: when a device refuses one codec configuration the renderer tries
+        // the next decoder instead of surfacing an error — combined with StreamSelection's
+        // device-decoder gate, a quality change always lands on something this phone plays.
+        val player = ExoPlayer.Builder(this, SyncedRenderersFactory(this).setEnableDecoderFallback(true))
             .setMediaSourceFactory(sources)
             // Auto quality climbs after 2 s of buffer instead of the default 10 s, so a
             // video that starts low reaches HD within a few seconds (YouTube-like).
@@ -122,6 +125,9 @@ class PlaybackService : MediaSessionService() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         player.setVideoFrameMetadataListener { _, releaseTimeNs, _, _ -> AvSync.onFrameReleased(releaseTimeNs) }
+        // Never crop: the picture is letterboxed into the surface and the surface is sized to
+        // the video's aspect (see VideoSurface/aspectFit), so the whole frame is always shown.
+        player.videoScalingMode = C.VIDEO_SCALING_MODE_SCALE_TO_FIT
         player.addListener(SponsorSkipper(player))
         player.addListener(SpeedKeeper(player))
         // Audio only is app-wide and kept; the UI applies it on connect, this covers a start

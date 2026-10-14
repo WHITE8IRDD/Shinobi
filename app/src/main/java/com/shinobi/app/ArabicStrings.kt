@@ -96,6 +96,9 @@ internal val ARABIC_STRINGS: Map<String, String> = mapOf(
     "Auto-hide Shorts controls" to "إخفاء أدوات Shorts تلقائيًا",
     "Hide the controls while a Short plays, and bring them back with a tap." to
         "إخفاء الأدوات أثناء تشغيل مقطع Short وإظهارها بلمسة.",
+    "Blur sensitive thumbnails" to "تمويه الصور المصغرة الحساسة",
+    "Blur age-restricted and mature thumbnails. Regular videos are never blurred." to
+        "تمويه الصور المصغرة المقيّدة بالعمر أو للبالغين. لا يُموَّه أي فيديو عادي.",
     "Keep the bottom bar off the Shorts screen" to "إخفاء الشريط السفلي في شاشة Shorts",
 
     // ── Welcome topics (also used as search seeds) ─────────────────────────────

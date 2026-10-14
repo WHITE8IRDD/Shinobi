@@ -1,6 +1,7 @@
 package com.shinobi.app
 
 import android.app.Application
+import android.graphics.Bitmap
 import coil.ImageLoader
 import coil.ImageLoaderFactory
 import coil.memory.MemoryCache
@@ -15,8 +16,13 @@ class ShinobiApplication : Application(), ImageLoaderFactory {
     /** Process-wide background work that no screen owns. */
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
+    /** The one image loader (built once), so memory pressure can trim its caches. */
+    @Volatile
+    private var loader: ImageLoader? = null
+
     override fun onCreate() {
         super.onCreate()
+        DeviceRam.init(this)
         Net.init(this)
         NewPipe.init(NewPipeDownloader.instance)
         // The iOS client only adds HLS livestream formats; Shinobi plays VOD, so skip that request.
@@ -50,9 +56,17 @@ class ShinobiApplication : Application(), ImageLoaderFactory {
     }
 
     // Thumbnails are in every list and the player; a short crossfade replaces pop-in.
+    // Sized for 2–3 GB phones: a small memory cache and 16-bit bitmaps (thumbnails are
+    // photos — half the bytes of ARGB_8888, invisible at card sizes), so lists recycle
+    // without the heap churning.
     override fun newImageLoader(): ImageLoader = ImageLoader.Builder(this)
         .crossfade(180)
-        .memoryCache { MemoryCache.Builder(this).maxSizePercent(0.25).build() }
+        .memoryCache {
+            MemoryCache.Builder(this)
+                .maxSizePercent(if (DeviceRam.lowRam) 0.12 else 0.18)
+                .build()
+        }
+        .bitmapConfig(Bitmap.Config.RGB_565)
         // The app's own connection pool: thumbnail hosts stay warm between screens instead
         // of a second client opening its own connections.
         .okHttpClient { Net.client }
@@ -60,4 +74,13 @@ class ShinobiApplication : Application(), ImageLoaderFactory {
         // headers say, so a relaunch or a revisited list draws from the cache at once.
         .respectCacheHeaders(false)
         .build()
+        .also { loader = it }
+
+    // Under pressure the caches go first — the big open-source clients do the same.
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        if (level >= android.content.ComponentCallbacks2.TRIM_MEMORY_BACKGROUND) {
+            runCatching { loader?.memoryCache?.trimMemory(level) }
+        }
+    }
 }
