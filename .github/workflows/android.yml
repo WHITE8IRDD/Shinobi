@@ -17,11 +17,17 @@ on:
         required: false
         default: ""
 
+      verified_run:
+        description: "Publish APKs from an already-successful run on this branch (no rebuild)"
+        required: false
+        default: ""
+
 permissions:
   contents: read
 
 jobs:
   build:
+    if: github.event_name != 'workflow_dispatch' || inputs.verified_run == ''
     runs-on: ubuntu-latest
     steps:
       - name: Check out source
@@ -117,6 +123,7 @@ jobs:
           retention-days: 14
 
   layout-tests:
+    if: github.event_name != 'workflow_dispatch' || inputs.verified_run == ''
     runs-on: ubuntu-latest
     permissions:
       # Only for the opt-in screenshot commit below; everything else is read-only.
@@ -206,7 +213,7 @@ jobs:
   release:
     if: >-
       startsWith(github.ref, 'refs/tags/') ||
-      (github.event_name == 'workflow_dispatch' && inputs.tag != '') ||
+      (github.event_name == 'workflow_dispatch' && inputs.tag != '' && inputs.verified_run == '') ||
       (github.event_name == 'push' &&
        github.ref == 'refs/heads/arena/e9eca407-shinobi' &&
        startsWith(github.event.head_commit.message, 'release: publish SHINOBI 1.3'))
@@ -305,3 +312,53 @@ jobs:
       - name: Publish failure log as annotations
         if: failure()
         run: python3 .github/scripts/annotate_failure.py release.log 200
+
+  publish-verified:
+    if: github.event_name == 'workflow_dispatch' && inputs.verified_run != '' && inputs.tag != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify successful run and unchanged APK source
+        id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN: ${{ inputs.verified_run }}
+        run: |
+          set -euo pipefail
+          gh run view "$RUN" --json conclusion,headSha,headBranch,workflowName > verified.json
+          test "$(jq -r .conclusion verified.json)" = success
+          test "$(jq -r .headBranch verified.json)" = "$GITHUB_REF_NAME"
+          test "$(jq -r .workflowName verified.json)" = Android
+          SHA=$(jq -r .headSha verified.json)
+          git merge-base --is-ancestor "$SHA" HEAD
+          git diff --exit-code "$SHA" HEAD -- app build.gradle.kts settings.gradle.kts gradle gradle.properties
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+      - uses: actions/download-artifact@v4
+        with:
+          name: shinobi-apks
+          path: apks
+          run-id: ${{ inputs.verified_run }}
+          github-token: ${{ github.token }}
+      - name: Publish verified APKs as latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+          NAME: ${{ inputs.name }}
+          SHA: ${{ steps.source.outputs.sha }}
+          RUN: ${{ inputs.verified_run }}
+        run: |
+          set -euo pipefail
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]
+          test -s "docs/releases/$TAG.md"
+          mkdir -p publish
+          cp "$(find apks -name app-release.apk -print -quit)" "publish/Shinobi-${TAG#v}-release.apk"
+          cp "$(find apks -name app-debug.apk -print -quit)" "publish/Shinobi-${TAG#v}-debug.apk"
+          cp "docs/releases/$TAG.md" notes.md
+          printf '\nVerified source: `%s`. [Build and tests](https://github.com/%s/actions/runs/%s).\n' "$SHA" "$GITHUB_REPOSITORY" "$RUN" >> notes.md
+          sha256sum publish/*.apk > publish/SHA256SUMS.txt
+          gh release create "$TAG" --target "$SHA" --title "${NAME:-SHINOBI ${TAG#v}}" --notes-file notes.md --latest publish/*
