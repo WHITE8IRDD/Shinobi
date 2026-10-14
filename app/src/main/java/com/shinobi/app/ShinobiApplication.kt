@@ -25,6 +25,9 @@ class ShinobiApplication : Application(), ImageLoaderFactory {
         LocalHistory.init(this)
         Account.init(this)
         SponsorBlock.init(this)
+        // The platform's own view of the network, so a failed request is never reported as
+        // "no internet" and a feed reloads by itself when the connection comes back.
+        Connectivity.init(this)
         // Stream URLs are bound to the network they were fetched on: forget them on a switch.
         getSystemService(android.net.ConnectivityManager::class.java)?.registerDefaultNetworkCallback(
             object : android.net.ConnectivityManager.NetworkCallback() {

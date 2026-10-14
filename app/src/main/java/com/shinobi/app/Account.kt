@@ -6,6 +6,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.Request
@@ -117,7 +120,7 @@ object Account {
                 .header("User-Agent", Net.USER_AGENT)
                 .header("Cookie", cookieHeader())
                 .build()
-            Net.client.newCall(request).execute().use { r ->
+            Net.apiClient.newCall(request).execute().use { r ->
                 absorbSetCookies(r.headers("Set-Cookie"))
                 val html = r.body?.string().orEmpty()
                 Regex("\"INNERTUBE_CLIENT_VERSION\":\"([^\"]+)\"").find(html)?.groupValues?.get(1)?.let { clientVersion = it }
@@ -192,59 +195,109 @@ object Account {
  * and watch time.
  */
 object InnerTube {
-    private const val BASE = "https://www.youtube.com/youtubei/v1/"
     private val JSON_TYPE = "application/json".toMediaType()
 
     /** Signed in when there's a session, otherwise anonymous (public pages like channels). */
     internal fun postAny(endpoint: String, body: JSONObject): JSONObject =
         if (Account.signedIn) post(endpoint, body) else post(endpoint, body, anonymous = true)
 
-    private fun request(endpoint: String, body: JSONObject, anonymous: Boolean, country: String): Request {
+    /**
+     * Builds one route's request. The client context, the user agent, the client-name headers
+     * and (for the browser clients only) the Origin/Referer pair all belong to [route]: a
+     * request that claims to be the Android app while carrying a desktop browser's headers is
+     * exactly the shape YouTube's bot check looks for.
+     */
+    private fun request(
+        endpoint: String,
+        body: JSONObject,
+        route: InnerTubeRoutes.Route,
+        anonymous: Boolean,
+        country: String,
+    ): Request {
         val auth = if (anonymous) null else Account.authorization() ?: throw NotSignedInException()
-        body.put(
-            "context",
-            JSONObject().put(
-                "client",
-                JSONObject()
-                    .put("clientName", "WEB")
-                    .put("clientVersion", Account.clientVersion())
-                    .put("hl", Loc.language)
-                    .put("gl", country)
-                    .apply { if (!anonymous) Account.visitorData()?.let { put("visitorData", it) } },
-            ),
-        )
+        body.put("context", JSONObject().put("client", route.clientContext(anonymous, country)))
+        val origin = route.origin()
         return Request.Builder()
-            .url("$BASE$endpoint?prettyPrint=false")
+            .url("$origin/youtubei/v1/$endpoint?prettyPrint=false")
             .post(body.toString().toRequestBody(JSON_TYPE))
-            .header("User-Agent", Net.USER_AGENT)
+            .header("User-Agent", route.userAgent)
             .apply { if (auth != null) { header("Cookie", Account.cookieHeader()); header("Authorization", auth) } }
-            .header("Origin", Account.ORIGIN)
-            .header("X-Origin", Account.ORIGIN)
-            .header("Referer", Account.ORIGIN + "/")
+            .apply {
+                if (route.isBrowserClient) {
+                    header("Origin", origin)
+                    header("X-Origin", origin)
+                    header("Referer", "$origin/")
+                }
+            }
             .header("X-Goog-AuthUser", "0")
-            .header("X-Youtube-Client-Name", "1")
-            .header("X-Youtube-Client-Version", Account.clientVersion())
+            .header("X-Youtube-Client-Name", route.clientNameId)
+            .header("X-Youtube-Client-Version", route.version)
             .apply { if (!anonymous) Account.visitorData()?.let { header("X-Goog-Visitor-Id", it) } }
             .build()
     }
 
-    internal fun post(endpoint: String, body: JSONObject, anonymous: Boolean = false, country: String = "US"): JSONObject {
-        val request = request(endpoint, body, anonymous, country)
-        Net.client.newCall(request).execute().use { r ->
-            if (!anonymous) Account.absorbSetCookies(r.headers("Set-Cookie"))
-            val text = r.body?.string().orEmpty()
-            if (r.code == 401 || r.code == 403) throw IOException("YouTube rejected the session (${r.code}). Try signing in again.")
-            if (!r.isSuccessful) throw IOException("YouTube returned ${r.code}")
-            return JSONObject(text)
+    /** A status that is a fact about the session, phrased as one, rather than a bare code. */
+    private fun httpFailure(code: Int, anonymous: Boolean): IOException =
+        if (!anonymous && (code == 401 || code == 403)) {
+            NetException(NetFailure.Session, code, Loc.t("YouTube rejected the session. Try signing in again."))
+        } else {
+            NetException.http(code, anonymous)
         }
+
+    /**
+     * Blocking InnerTube call: the route ladder, with the transport's own backoff underneath
+     * each route. Used by the account's writes and by code already on an IO thread.
+     */
+    internal fun post(endpoint: String, body: JSONObject, anonymous: Boolean = false, country: String = "US"): JSONObject {
+        val deadline = System.currentTimeMillis() + Retry.DEADLINE_MS
+        var failure: Throwable? = null
+        for (route in InnerTubeRoutes.plan(anonymous)) {
+            if (System.currentTimeMillis() > deadline) break
+            try {
+                Net.apiClient.newCall(request(endpoint, body, route, anonymous, country)).execute().use { r ->
+                    if (!anonymous) Account.absorbSetCookies(r.headers("Set-Cookie"))
+                    val text = r.body?.string().orEmpty()
+                    if (!r.isSuccessful) throw httpFailure(r.code, anonymous)
+                    val json = JSONObject(text)
+                    InnerTubeRoutes.noteHealthy(route)
+                    return json
+                }
+            } catch (e: Throwable) {
+                failure = e
+                if (NetErrors.stopsLadder(e)) break
+            }
+        }
+        throw NetErrors.asException(failure)
     }
 
-    /** Superseded feed/search/country requests cancel their OkHttp calls, not just the UI job. */
+    /**
+     * Suspending InnerTube read. Superseded feed/search/country requests cancel their OkHttp
+     * calls, not just the UI job; a failure that is not a permanent fact walks the route
+     * ladder ([InnerTubeRoutes]) before it is ever allowed to become an error on screen.
+     */
     private suspend fun readPost(endpoint: String, body: JSONObject, anonymous: Boolean = !Account.signedIn, country: String = "US"): JSONObject {
-        val call = Net.client.newCall(request(endpoint, body, anonymous, country))
-        return JSONObject(call.awaitText { response ->
-            if (!anonymous) Account.absorbSetCookies(response.headers("Set-Cookie"))
-        })
+        val deadline = System.currentTimeMillis() + Retry.DEADLINE_MS
+        var failure: Throwable? = null
+        for (route in InnerTubeRoutes.plan(anonymous)) {
+            currentCoroutineContext().ensureActive()
+            if (System.currentTimeMillis() > deadline) break
+            try {
+                val call = Net.apiClient.newCall(request(endpoint, body, route, anonymous, country))
+                val json = JSONObject(call.awaitText(anonymous = anonymous) { response ->
+                    if (!anonymous) Account.absorbSetCookies(response.headers("Set-Cookie"))
+                })
+                InnerTubeRoutes.noteHealthy(route)
+                return json
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                failure = e
+                if (NetErrors.stopsLadder(e)) break
+                // Worth one short wait: the network may simply be mid-handover.
+                if (NetErrors.classify(e) == NetFailure.Offline) Connectivity.awaitOnline(Retry.OFFLINE_WAIT_MS)
+            }
+        }
+        throw NetErrors.asException(failure)
     }
 
     // ── Reads ──────────────────────────────────────────────────────────────────

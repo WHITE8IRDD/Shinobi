@@ -139,7 +139,7 @@ object ChannelNames {
             .url("https://www.youtube.com/feeds/videos.xml?channel_id=$channelId")
             .header("User-Agent", Net.USER_AGENT)
             .build()
-        Net.client.newCall(request).execute().use { r ->
+        Net.apiClient.newCall(request).execute().use { r ->
             // Removed or hidden channels have no feed: no name, and no point asking again.
             if (r.code == 404) return null
             if (!r.isSuccessful) throw IOException("feed ${r.code}")

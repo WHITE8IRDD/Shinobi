@@ -173,7 +173,7 @@ object CaptionLoader {
             .header("User-Agent", Net.USER_AGENT)
             .header("Accept", "text/vtt, application/ttml+xml, application/xml, text/xml, */*")
             .build()
-        Net.client.newCall(request).execute().use { response ->
+        Net.apiClient.newCall(request).execute().use { response ->
             coroutineContext.ensureActive()
             if (!response.isSuccessful) throw IOException("Caption request failed (HTTP ${response.code}).")
             if (!(response.request.url.host == "youtube.com" || response.request.url.host.endsWith(".youtube.com"))) {
