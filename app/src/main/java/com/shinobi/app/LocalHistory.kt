@@ -84,8 +84,8 @@ object LocalHistory {
 
     private fun refreshTasteKey() {
         tasteKey = buildString {
-            entries.take(100).forEach { e ->
-                append(e.video.id).append(':').append(e.watchedMs >= 5_000).append(':').append(e.video.channel).append(',')
+            entries.filter { it.watchedMs >= 5_000 }.take(100).forEach { e ->
+                append(e.video.id).append(':').append(e.video.channel).append(',')
             }
             append('|')
             recentQueries.take(5).forEach { q -> append(q).append(',') }
@@ -207,7 +207,7 @@ object LocalHistory {
     fun clearSearches() {
         recentQueries = emptyList()
         refreshTasteKey()
-        prefs?.edit()?.remove(KEY_QUERIES)?.apply()
+        prefs?.let { p -> disk.execute { p.edit().remove(KEY_QUERIES).apply() } }
     }
 
     fun cacheRelated(videoId: String, related: List<VideoItem>) {
@@ -242,7 +242,7 @@ object LocalHistory {
         entries = emptyList()
         relatedCache.clear()
         refreshTasteKey()
-        prefs?.edit()?.remove(KEY_ENTRIES)?.apply()
+        prefs?.let { p -> disk.execute { p.edit().remove(KEY_ENTRIES).apply() } }
     }
 
     // ── Local Likes & Watch Later ──
@@ -263,7 +263,7 @@ object LocalHistory {
             }
             LikeStatus.Dislike -> {
                 likedVideos = likedVideos.filterNot { it.id == video.id }
-                dislikedIds = dislikedIds + video.id
+                dislikedIds = (dislikedIds + video.id).toList().takeLast(MAX_COLLECTION).toSet()
             }
             LikeStatus.None -> {
                 likedVideos = likedVideos.filterNot { it.id == video.id }

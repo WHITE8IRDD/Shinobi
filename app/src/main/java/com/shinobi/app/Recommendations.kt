@@ -253,7 +253,10 @@ object TasteEngine {
  * [LocalHistory.tasteSignature] changes.
  */
 @Stable
-class PersonalizedHomeState(private val scope: CoroutineScope) {
+class PersonalizedHomeState(
+    private val scope: CoroutineScope,
+    private val loadSource: (suspend (HomeSource) -> SearchPage)? = null,
+) {
     var videos by mutableStateOf<List<VideoItem>>(emptyList())
         private set
     var shorts by mutableStateOf<List<VideoItem>>(emptyList())
@@ -276,9 +279,9 @@ class PersonalizedHomeState(private val scope: CoroutineScope) {
     private var job: Job? = null
     private var sources = emptyList<HomeSource>()
     private var exhausted = false
-    val hasMore get() = !exhausted && videos.size < 240 && sources.any { it.next != null }
+    val hasMore get() = !exhausted && videos.size < 240 && sources.any { it.next != null && (selectedTopic != null || it.kind == RecommendationMixer.Kind.Discovery) }
 
-    private data class HomeSource(
+    data class HomeSource(
         val key: String,
         val kind: RecommendationMixer.Kind,
         val next: String? = null,
@@ -328,7 +331,7 @@ class PersonalizedHomeState(private val scope: CoroutineScope) {
     }
 
     private suspend fun fetch(source: HomeSource): Loaded {
-        val page = when (source.kind) {
+        val page = loadSource?.invoke(source) ?: when (source.kind) {
             RecommendationMixer.Kind.Discovery -> {
                 val discovery = InnerTube.discovery(source.next)
                 if (source.next == null && discovery.shorts.isEmpty()) {

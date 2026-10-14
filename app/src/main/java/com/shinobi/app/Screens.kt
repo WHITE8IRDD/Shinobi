@@ -247,7 +247,7 @@ private fun PersonalizedHomeContent(
                 } else if (state.loading) {
                     // The first load draws its own shape straight away instead of an empty page.
                     item(key = "home-skeleton") { ListSkeleton() }
-                } else if (!state.loading) {
+                } else if (!state.loading && shortsShelf.isEmpty()) {
                     item(key = "home-empty") {
                         EmptyState(
                             icon = Icons.Rounded.AutoAwesome,

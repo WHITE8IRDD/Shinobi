@@ -29,7 +29,7 @@ object SuggestionApi {
 }
 
 /** Shared cancellable HTTP adapter; no blocking network work on the composition thread. */
-internal suspend fun okhttp3.Call.awaitText(): String = suspendCancellableCoroutine { continuation ->
+internal suspend fun okhttp3.Call.awaitText(onHeaders: (okhttp3.Response) -> Unit = {}): String = suspendCancellableCoroutine { continuation ->
     continuation.invokeOnCancellation { cancel() }
     enqueue(object : okhttp3.Callback {
         override fun onFailure(call: okhttp3.Call, e: IOException) {
@@ -38,6 +38,7 @@ internal suspend fun okhttp3.Call.awaitText(): String = suspendCancellableCorout
         override fun onResponse(call: okhttp3.Call, response: okhttp3.Response) {
             try {
                 val text = response.use {
+                    onHeaders(it)
                     if (!it.isSuccessful) throw IOException("YouTube returned ${it.code}")
                     it.body?.string().orEmpty()
                 }

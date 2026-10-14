@@ -14,11 +14,12 @@ object RecommendationMixer {
     fun diverseSeeds(videos: List<VideoItem>, limit: Int): List<VideoItem> {
         val pool = videos.filter { it.id.isNotBlank() }.distinctBy { it.id }.take(100).toMutableList()
         val result = mutableListOf<VideoItem>()
+        val keywords = pool.associate { it.id to words(it) }
         while (result.size < limit && pool.isNotEmpty()) {
             val best = pool.withIndex().maxByOrNull { (index, video) ->
-                val tokens = words(video)
+                val tokens = keywords[video.id].orEmpty()
                 val similarity = result.maxOfOrNull { other ->
-                    val overlap = tokens.intersect(words(other)).size.toDouble() / maxOf(1, minOf(tokens.size, words(other).size))
+                    val overlap = tokens.intersect(keywords[other.id].orEmpty()).size.toDouble() / maxOf(1, minOf(tokens.size, keywords[other.id].orEmpty().size))
                     maxOf(overlap, if (video.channel.isNotBlank() && video.channel == other.channel) 1.0 else 0.0)
                 } ?: 0.0
                 1.0 / (1 + index * 0.04) - similarity * 2.0

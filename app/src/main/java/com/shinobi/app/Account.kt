@@ -199,7 +199,7 @@ object InnerTube {
     internal fun postAny(endpoint: String, body: JSONObject): JSONObject =
         if (Account.signedIn) post(endpoint, body) else post(endpoint, body, anonymous = true)
 
-    internal fun post(endpoint: String, body: JSONObject, anonymous: Boolean = false, country: String = "US"): JSONObject {
+    private fun request(endpoint: String, body: JSONObject, anonymous: Boolean, country: String): Request {
         val auth = if (anonymous) null else Account.authorization() ?: throw NotSignedInException()
         body.put(
             "context",
@@ -210,10 +210,10 @@ object InnerTube {
                     .put("clientVersion", Account.clientVersion())
                     .put("hl", Loc.language)
                     .put("gl", country)
-                    .apply { Account.visitorData()?.let { put("visitorData", it) } },
+                    .apply { if (!anonymous) Account.visitorData()?.let { put("visitorData", it) } },
             ),
         )
-        val request = Request.Builder()
+        return Request.Builder()
             .url("$BASE$endpoint?prettyPrint=false")
             .post(body.toString().toRequestBody(JSON_TYPE))
             .header("User-Agent", Net.USER_AGENT)
@@ -224,10 +224,14 @@ object InnerTube {
             .header("X-Goog-AuthUser", "0")
             .header("X-Youtube-Client-Name", "1")
             .header("X-Youtube-Client-Version", Account.clientVersion())
-            .apply { Account.visitorData()?.let { header("X-Goog-Visitor-Id", it) } }
+            .apply { if (!anonymous) Account.visitorData()?.let { header("X-Goog-Visitor-Id", it) } }
             .build()
+    }
+
+    internal fun post(endpoint: String, body: JSONObject, anonymous: Boolean = false, country: String = "US"): JSONObject {
+        val request = request(endpoint, body, anonymous, country)
         Net.client.newCall(request).execute().use { r ->
-            if (auth != null) Account.absorbSetCookies(r.headers("Set-Cookie"))
+            if (!anonymous) Account.absorbSetCookies(r.headers("Set-Cookie"))
             val text = r.body?.string().orEmpty()
             if (r.code == 401 || r.code == 403) throw IOException("YouTube rejected the session (${r.code}). Try signing in again.")
             if (!r.isSuccessful) throw IOException("YouTube returned ${r.code}")
@@ -235,11 +239,19 @@ object InnerTube {
         }
     }
 
+    /** Superseded feed/search/country requests cancel their OkHttp calls, not just the UI job. */
+    private suspend fun readPost(endpoint: String, body: JSONObject, anonymous: Boolean = !Account.signedIn, country: String = "US"): JSONObject {
+        val call = Net.client.newCall(request(endpoint, body, anonymous, country))
+        return JSONObject(call.awaitText { response ->
+            if (!anonymous) Account.absorbSetCookies(response.headers("Set-Cookie"))
+        })
+    }
+
     // ── Reads ──────────────────────────────────────────────────────────────────
 
     suspend fun browse(browseId: String, continuation: String? = null): FeedPage = withContext(Dispatchers.IO) {
         val body = if (continuation != null) JSONObject().put("continuation", continuation) else JSONObject().put("browseId", browseId)
-        parseFeed(post("browse", body))
+        parseFeed(readPost("browse", body, anonymous = false))
     }
 
     suspend fun home(next: String? = null) = browse("FEwhat_to_watch", next)
@@ -247,7 +259,9 @@ object InnerTube {
     /** YouTube's own home ranking, enriched locally rather than replaced by title searches. */
     suspend fun discovery(next: String? = null): SearchPage = withContext(Dispatchers.IO) {
         val body = if (next == null) JSONObject().put("browseId", "FEwhat_to_watch") else JSONObject().put("continuation", next)
-        val root = postAny("browse", body)
+        val root = try { readPost("browse", body) }
+            catch (e: kotlinx.coroutines.CancellationException) { throw e }
+            catch (e: Exception) { if (next != null) throw e else JSONObject() }
         val feed = parseFeed(root)
         if (next == null && feed.videos.isEmpty()) {
             // Anonymous Home can be empty without a watch cookie. Use a real public chart,
@@ -260,7 +274,7 @@ object InnerTube {
     /** Public regional chart. No account cookies: country must not be overridden by a session. */
     suspend fun trending(country: String): FeedPage = withContext(Dispatchers.IO) {
         require(country in java.util.Locale.getISOCountries())
-        val root = post("browse", JSONObject().put("browseId", "FEtrending")
+        val root = readPost("browse", JSONObject().put("browseId", "FEtrending")
             .put("params", "4gIOGgxtb3N0X3BvcHVsYXI%3D"), anonymous = true, country = country)
         parseTrending(root)
     }
@@ -278,14 +292,14 @@ object InnerTube {
     suspend fun channelVideos(channelId: String, continuation: String? = null): FeedPage = withContext(Dispatchers.IO) {
         val body = if (continuation != null) JSONObject().put("continuation", continuation)
         else JSONObject().put("browseId", channelId).put("params", CHANNEL_VIDEOS_TAB)
-        parseFeed(postAny("browse", body))
+        parseFeed(readPost("browse", body))
     }
 
     /** Watch-next recommendations for [videoId] (works signed in or signed out). */
     suspend fun related(videoId: String, continuation: String? = null): FeedPage = withContext(Dispatchers.IO) {
         val body = if (continuation != null) JSONObject().put("continuation", continuation)
         else JSONObject().put("videoId", videoId)
-        val root = postAny("next", body)
+        val root = readPost("next", body)
         val secondary = root.optJSONObject("contents")
             ?.optJSONObject("twoColumnWatchNextResults")
             ?.optJSONObject("secondaryResults")
@@ -296,7 +310,7 @@ object InnerTube {
     suspend fun searchPage(query: String, continuation: String? = null): SearchPage = withContext(Dispatchers.IO) {
         val body = if (continuation != null) JSONObject().put("continuation", continuation)
         else JSONObject().put("query", query)
-        val root = postAny("search", body)
+        val root = readPost("search", body)
         val feed = parseFeed(root)
         val shorts = parseShorts(root)
         SearchPage(feed.videos, shorts, feed.next)
