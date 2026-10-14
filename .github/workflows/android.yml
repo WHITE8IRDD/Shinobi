@@ -85,6 +85,10 @@ jobs:
           set -o pipefail
           ./gradlew testDebugUnitTest --console=plain 2>&1 | tee -a build.log
 
+      - name: Summarize unit tests
+        if: always()
+        run: python3 .github/scripts/summarize_tests.py app/build/test-results
+
       - name: Assemble APKs
         run: |
           set -o pipefail
@@ -133,7 +137,13 @@ jobs:
           arch: x86_64
           profile: pixel_2
           disable-animations: true
-          script: ./gradlew connectedDebugAndroidTest --console=plain
+          script: bash -o pipefail -c './gradlew connectedDebugAndroidTest --console=plain 2>&1 | tee layout.log'
+      - name: Annotate device test failures
+        if: failure()
+        run: python3 .github/scripts/annotate_failure.py layout.log 160
+      - name: Summarize device tests
+        if: always()
+        run: python3 .github/scripts/summarize_tests.py app/build/outputs/androidTest-results
       - name: Upload device test reports
         if: always()
         uses: actions/upload-artifact@v4

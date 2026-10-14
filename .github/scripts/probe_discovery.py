@@ -26,7 +26,7 @@ for client, number, version in [('WEB', '1', '2.20260901.00.00'), ('MWEB', '2', 
         try:
             with urllib.request.urlopen(request, timeout=8) as response:
                 root = json.load(response)
-                print(f'{label}: HTTP {response.status}, video renderers={count_videos(root)}, api_error={root.get("error", {}).get("code", "none")}')
+                print(f'::notice::{label}: HTTP {response.status}, video renderers={count_videos(root)}, api_error={root.get("error", {}).get("code", "none")}')
         except Exception as error:
-            print(f'{label}: {type(error).__name__}: {error}')
+            print(f'::notice::{label}: {type(error).__name__}: {error}')
 print('Diagnostic only. Shared runner IPs and device networks can receive different responses.')

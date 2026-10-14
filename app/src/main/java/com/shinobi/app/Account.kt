@@ -292,7 +292,10 @@ object InnerTube {
     suspend fun discovery(next: String? = null): SearchPage = withContext(Dispatchers.IO) {
         if (next?.startsWith(DISCOVERY_TOKEN) == true) return@withContext discoverySearches(next.removePrefix(DISCOVERY_TOKEN).toIntOrNull() ?: 0)
         val body = if (next == null) JSONObject().put("browseId", "FEwhat_to_watch") else JSONObject().put("continuation", next)
-        val root = try { kotlinx.coroutines.withTimeoutOrNull(10_000) { readPost("browse", body) } }
+        val root = try {
+            if (next == null) kotlinx.coroutines.withTimeoutOrNull(10_000) { readPost("browse", body) }
+            else readPost("browse", body)
+        }
             catch (e: kotlinx.coroutines.CancellationException) { throw e }
             catch (e: Exception) { if (next != null) throw e else null }
         val feed = root?.let(::parseFeed)
@@ -702,6 +705,7 @@ object InnerTube {
             durationSec = parseDuration(duration),
             views = parseViews(o.text("viewCountText") ?: o.text("shortViewCountText") ?: infoRuns.firstOrNull { it.contains("view") }),
             uploaded = o.text("publishedTimeText") ?: infoRuns.firstOrNull { it.contains("ago") },
+            isShort = hasReelEndpoint(o),
         )
     }
 
