@@ -537,9 +537,10 @@ fun PillButton(text: String, onClick: () -> Unit, icon: ImageVector? = null, mod
 }
 
 /**
- * One-line label that shrinks its own font (never below [minSize]) until the text
- * fits, instead of clipping at enlarged system text sizes. The row stays one line
- * and keeps its fixed height; the text stays as large as fits.
+ * Label that shrinks its own font (never below [minSize]) until the text fits,
+ * instead of clipping at enlarged system text sizes. Single-line by default;
+ * pass a larger [maxLines] for titles that should wrap naturally first and only
+ * shrink if they still overflow. The text stays as large as fits.
  */
 @Composable
 fun OneLineFitText(
@@ -548,6 +549,9 @@ fun OneLineFitText(
     fontWeight: FontWeight,
     baseSize: androidx.compose.ui.unit.TextUnit,
     minSize: androidx.compose.ui.unit.TextUnit = 10.sp,
+    maxLines: Int = 1,
+    textAlign: TextAlign = TextAlign.Center,
+    lineHeight: androidx.compose.ui.unit.TextUnit = androidx.compose.ui.unit.TextUnit.Unspecified,
     modifier: Modifier = Modifier,
 ) {
     var size by remember(text) { mutableStateOf(baseSize) }
@@ -556,9 +560,10 @@ fun OneLineFitText(
         color = color,
         fontWeight = fontWeight,
         fontSize = size,
-        maxLines = 1,
-        softWrap = false,
-        textAlign = TextAlign.Center,
+        lineHeight = lineHeight,
+        maxLines = maxLines,
+        softWrap = maxLines > 1,
+        textAlign = textAlign,
         modifier = modifier,
         onTextLayout = { result ->
             if (result.hasVisualOverflow && size > minSize) {
@@ -615,7 +620,15 @@ fun FeatureBentoCard(
         ) {
             Icon(icon, contentDescription = null, tint = c.onPrimaryContainer, modifier = Modifier.size(20.dp))
         }
-        Text(title, fontWeight = FontWeight.ExtraBold, fontSize = 15.sp, lineHeight = 20.sp)
+        OneLineFitText(
+            title,
+            color = c.onSurface,
+            fontWeight = FontWeight.ExtraBold,
+            baseSize = 15.sp,
+            maxLines = 4,
+            textAlign = TextAlign.Start,
+            lineHeight = 20.sp,
+        )
         Text(body, color = c.onSurfaceVariant, fontSize = 12.5.sp, lineHeight = 17.sp, fontWeight = FontWeight.Medium)
     }
 }

@@ -37,12 +37,16 @@ class LayoutRegressionTest {
 
     private fun assertFullText(text: String, oneLine: Boolean = false) {
         val layouts = mutableListOf<TextLayoutResult>()
-        compose.onNodeWithText(text).assertIsDisplayed().performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+        val node = compose.onNodeWithText(text).assertIsDisplayed().fetchSemanticsNode()
+        compose.onNodeWithText(text).performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
         assertTrue(layouts.isNotEmpty())
         val first = layouts.first()
-        val diag = "text='$text' size=${first.size} lines=${first.lineCount} " +
+        val diag = "text='$text' len=${text.length} size=${first.size} lines=${first.lineCount} " +
             "overflowW=${first.didOverflowWidth} overflowH=${first.didOverflowHeight} " +
-            "rights=" + (0 until first.lineCount).joinToString(",") { first.getLineRight(it).toString() }
+            "node=${node.size} pos=${node.positionInRoot} " +
+            "lines=" + (0 until first.lineCount).joinToString(";") {
+                "[${first.getLineLeft(it)},${first.getLineTop(it)}-${first.getLineRight(it)},${first.getLineBottom(it)}]"
+            }
         assertFalse("Clipped: $diag", first.hasVisualOverflow)
         if (oneLine) assertEquals("Multi-line: $diag", 1, first.lineCount)
     }
