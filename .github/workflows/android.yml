@@ -242,7 +242,7 @@ jobs:
             # The notes file's H1, when present, is the release name — one place to keep
             # docs/releases/<tag>.md and the published title in agreement.
             if [[ -z "$NAME" && -f "docs/releases/$TAG.md" ]]; then
-              NAME=$(head -n 1 "docs/releases/$TAG.md" | sed -E 's/^#[[:space:]]*//;s/[[:space:]]+$//')
+              NAME=$(head -n 1 "docs/releases/$TAG.md" | sed -E 's/^#+[[:space:]]*//;s/[[:space:]]+$//')
             fi
             if [[ -z "$NAME" ]]; then
               if [[ "$TAG" =~ ^[vV][0-9] ]]; then
@@ -258,6 +258,9 @@ jobs:
             case "${FILE_SLUG^^}" in
               SHINOBI-*) FILE_SLUG="${FILE_SLUG#*[Ss][Hh][Ii][Nn][Oo][Bb][Ii]-}" ;;
             esac
+            # Asset paths must stay plain ASCII words: gh parses each asset argument as a
+            # URL, so a '#' would be eaten as a fragment and the upload would fail.
+            FILE_SLUG="${FILE_SLUG//[!A-Za-z0-9.-]/-}"
             echo "Release tag '$TAG', title '$NAME'"
 
             echo "--- downloaded artifact contents ---"
