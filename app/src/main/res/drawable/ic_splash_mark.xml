@@ -12,10 +12,10 @@
     android:viewportWidth="288"
     android:viewportHeight="288">
     <group
-        android:translateX="74.679"
-        android:translateY="68.649"
-        android:scaleX="0.148360"
-        android:scaleY="0.148360">
+        android:translateX="73.124"
+        android:translateY="73.124"
+        android:scaleX="0.138496"
+        android:scaleY="0.138496">
         <path
             android:fillColor="@color/splash_mark"
             android:pathData="M368.2,0.5 L159.5,121.8 L763.5,514.2 L607.4,611.8 L284.1,522.9 L276.4,515.1 L227.1,406.9 L557.7,493.9 L60.4,174.9 L127.6,311.7 L57.0,356.2 L156.1,386.1 L156.6,900.8 L362.0,1023.0 L966.5,672.7 L965.5,348.4 Z" />

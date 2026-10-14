@@ -80,6 +80,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -99,6 +100,8 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
@@ -134,6 +137,12 @@ class MainActivity : ComponentActivity() {
         }
         setContent { ShinobiTheme { ShinobiApp() } }
     }
+
+    override fun onStop() {
+        super.onStop()
+        // The feed preview player is only for the screen in front of the user.
+        FeedPreview.release()
+    }
 }
 
 enum class Tab(val label: String, val icon: ImageVector, val selectedIcon: ImageVector) {
@@ -150,7 +159,9 @@ private val NavHeight = 62.dp
 private val NavWidth = 364.dp
 private val MiniWidth = 368.dp
 private val MiniGap = 8.dp
-private const val SELECTED_TAB_WEIGHT = 2.35f
+/** Space between the nav pill's tabs, and the least the active (labelled) tab may get. */
+private val NavTabGap = 4.dp
+private val NavActiveMinWidth = 140.dp
 
 @Composable
 fun ShinobiApp() {
@@ -172,6 +183,9 @@ fun ShinobiApp() {
         openPlaylist?.takeUnless { it.id.startsWith("LOCAL_") }?.let { lib.playlistFeed(it.id) }
     }
     var tab by rememberSaveable { mutableStateOf(Tab.Home) }
+    // +1 / -1 while a swipe is changing the tab (the page slides in from that side); 0 for taps.
+    var tabSlide by remember { mutableIntStateOf(0) }
+    val view = LocalView.current
     // Bumped when the already-selected tab is tapped; that tab's list scrolls to the top.
     val scrollToTop = remember { mutableStateMapOf<Tab, Int>() }
     val reduced = rememberReducedMotion()
@@ -195,6 +209,9 @@ fun ShinobiApp() {
             player.exitShortsMode()
         }
     }
+    // Home's silent previews step aside the moment a real video plays.
+    SideEffect { FeedPreview.suppressed = { player.isPlaying } }
+    LaunchedEffect(player.isPlaying) { if (player.isPlaying) FeedPreview.stop() }
 
     // The screen stays on while a video plays (full player, mini-player or fullscreen);
     // paused, the normal timeout applies again. Only affects the visible window.
@@ -324,10 +341,26 @@ fun ShinobiApp() {
                 openChannel = url
             },
         ) {
+        // A sideways swipe across a page moves to the neighbouring tab (see tabSwipe); the
+        // page then slides in from the side the finger revealed, where a tapped tab rises.
+        val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
+        val swipeable = openChannel == null && openPlaylist == null && !showPlayer && !showFullscreen
+        Box(
+            Modifier.fillMaxSize().tabSwipe(swipeable, rtl) { forward ->
+                val next = Tab.entries.getOrNull(tab.ordinal + if (forward) 1 else -1) ?: return@tabSwipe
+                view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
+                tabSlide = if (forward != rtl) 1 else -1
+                tab = next
+            },
+        ) {
         AnimatedContent(
             targetState = tab,
             transitionSpec = {
+                val slide = tabSlide
                 if (reduced) fadeIn(snap()) togetherWith fadeOut(snap())
+                else if (slide != 0) (fadeIn(tween(Motion.PageEnterMs, easing = Motion.Emphasized)) +
+                    slideInHorizontally(tween(Motion.PageRiseMs, easing = Motion.Emphasized)) { slide * it / 5 }) togetherWith
+                    (fadeOut(tween(Motion.PageExitMs)) + slideOutHorizontally(tween(Motion.PageExitMs, easing = Motion.Emphasized)) { -slide * it / 6 })
                 else (fadeIn(tween(Motion.PageEnterMs, easing = Motion.Emphasized)) +
                     slideInVertically(tween(Motion.PageRiseMs, easing = Motion.Emphasized)) { (it / 35).coerceIn(8, 24) }) togetherWith
                     fadeOut(tween(Motion.PageExitMs))
@@ -390,6 +423,9 @@ fun ShinobiApp() {
                 )
             }
         }
+        }
+        // Tapped tabs rise; only a swipe sets a sideways direction, and only for that change.
+        LaunchedEffect(tab) { tabSlide = 0 }
 
         // A playlist opens as a page over the tabs (slides in from the right).
         AnimatedVisibility(
@@ -580,11 +616,15 @@ private fun QueueMessage(player: PlayerState, modifier: Modifier) {
 
 /**
  * Shinobi's floating nav pill: tonal surfaceVariant with a wide, very soft shadow. The
- * active tab grows (weight 2.2) and reveals its label on a primaryContainer pill; the
- * others show their icon only. No ripple, no outline.
+ * active tab grows and reveals its label on a primary pill; the others show their icon only.
+ * No ripple, no outline.
+ *
+ * Sizing: the icon-only tabs are compact and the active tab takes all the room that leaves,
+ * so its label ("Subscriptions", "الاشتراكات") has the width it needs on any phone; the label
+ * also shrinks a little rather than clip when the font scale is large.
  */
 @Composable
-private fun NavPill(selected: Tab, onSelect: (Tab) -> Unit, modifier: Modifier = Modifier) {
+internal fun NavPill(selected: Tab, onSelect: (Tab) -> Unit, modifier: Modifier = Modifier) {
     val c = MaterialTheme.colorScheme
     val view = LocalView.current
     val reduced = rememberReducedMotion()
@@ -601,42 +641,63 @@ private fun NavPill(selected: Tab, onSelect: (Tab) -> Unit, modifier: Modifier =
         tonalElevation = 0.dp,
         shadowElevation = 0.dp,
     ) {
-        Row(Modifier.padding(6.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            Tab.entries.forEach { t ->
-                val active = t == selected
-                val spec = if (reduced) snap<Float>() else tween(260, easing = Motion.Emphasized)
-                val labelColor by animateColorAsState(
-                    if (active) c.onPrimary else c.onSurfaceVariant,
-                    if (reduced) snap() else tween(220, easing = Motion.Emphasized), label = "tabContent",
-                )
-                // Fade the pill by alpha of the same color (never toward Color.Transparent).
-                val pillColor by animateColorAsState(
-                    // Full primary (not the pale container tone) so the selected tab stands
-                    // out clearly against the bar in light and dark (product owner, 2026-10-05).
-                    if (active) c.primary else c.primary.copy(alpha = 0f),
-                    if (reduced) snap() else tween(220, easing = Motion.Emphasized), label = "tabPill",
-                )
-                val weight by animateFloatAsState(if (active) SELECTED_TAB_WEIGHT else 1f, spec, label = "tabWeight")
-                val interaction = remember(t) { MutableInteractionSource() }
-                Surface(
-                    modifier = Modifier
-                        .weight(weight.coerceAtLeast(0.75f))
-                        .clickable(interactionSource = interaction, indication = null) {
-                            view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
-                            onSelect(t)
-                        },
-                    shape = RoundedCornerShape(25.dp),
-                    color = pillColor,
-                    contentColor = labelColor,
-                ) {
-                    Row(Modifier.height(50.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-                        Icon(if (active) t.selectedIcon else t.icon, contentDescription = Loc.t(t.label), modifier = Modifier.size(22.dp))
-                        AnimatedVisibility(
-                            visible = active,
-                            enter = if (reduced) fadeIn(snap()) else fadeIn(tween(160, easing = Motion.Emphasized)) + expandHorizontally(tween(200, easing = Motion.Emphasized)),
-                            exit = if (reduced) fadeOut(snap()) else fadeOut(tween(90)) + shrinkHorizontally(tween(160, easing = Motion.Emphasized)),
+        BoxWithConstraints(Modifier.padding(6.dp)) {
+            val tabs = Tab.entries.size
+            val inner = maxWidth - NavTabGap * (tabs - 1)
+            // Icon-only tabs: 36–50 dp each, whatever leaves the active tab its 140 dp (the
+            // 36 dp floor is only reached on 320 dp screens, where the label room matters more).
+            val compact = ((inner - NavActiveMinWidth) / (tabs - 1)).coerceIn(36.dp, 50.dp)
+            val expanded = (inner - compact * (tabs - 1)).coerceAtLeast(compact)
+            // Weights, not fixed widths: the row always sums exactly, mid-animation included.
+            val activeWeight = (expanded / compact).coerceAtLeast(1f)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(NavTabGap)) {
+                Tab.entries.forEach { t ->
+                    val active = t == selected
+                    val spec = if (reduced) snap<Float>() else tween(260, easing = Motion.Emphasized)
+                    val labelColor by animateColorAsState(
+                        if (active) c.onPrimary else c.onSurfaceVariant,
+                        if (reduced) snap() else tween(220, easing = Motion.Emphasized), label = "tabContent",
+                    )
+                    // Fade the pill by alpha of the same color (never toward Color.Transparent).
+                    val pillColor by animateColorAsState(
+                        // Full primary (not the pale container tone) so the selected tab stands
+                        // out clearly against the bar in light and dark (product owner, 2026-10-05).
+                        if (active) c.primary else c.primary.copy(alpha = 0f),
+                        if (reduced) snap() else tween(220, easing = Motion.Emphasized), label = "tabPill",
+                    )
+                    val weight by animateFloatAsState(if (active) activeWeight else 1f, spec, label = "tabWeight")
+                    val interaction = remember(t) { MutableInteractionSource() }
+                    Surface(
+                        modifier = Modifier
+                            .weight(weight.coerceAtLeast(0.75f))
+                            .clickable(interactionSource = interaction, indication = null) {
+                                view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
+                                onSelect(t)
+                            },
+                        shape = RoundedCornerShape(25.dp),
+                        color = pillColor,
+                        contentColor = labelColor,
+                    ) {
+                        Row(
+                            Modifier.height(50.dp).padding(horizontal = 2.dp),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Text(Loc.t(t.label), modifier = Modifier.padding(start = 8.dp), fontWeight = FontWeight.Bold, fontSize = 14.sp, maxLines = 1, softWrap = false)
+                            Icon(if (active) t.selectedIcon else t.icon, contentDescription = Loc.t(t.label), modifier = Modifier.size(22.dp))
+                            AnimatedVisibility(
+                                visible = active,
+                                enter = if (reduced) fadeIn(snap()) else fadeIn(tween(160, easing = Motion.Emphasized)) + expandHorizontally(tween(200, easing = Motion.Emphasized)),
+                                exit = if (reduced) fadeOut(snap()) else fadeOut(tween(90)) + shrinkHorizontally(tween(160, easing = Motion.Emphasized)),
+                            ) {
+                                OneLineFitText(
+                                    Loc.t(t.label),
+                                    color = labelColor,
+                                    fontWeight = FontWeight.Bold,
+                                    baseSize = 14.sp,
+                                    minSize = 8.sp,
+                                    modifier = Modifier.padding(start = 5.dp, end = 2.dp),
+                                )
+                            }
                         }
                     }
                 }

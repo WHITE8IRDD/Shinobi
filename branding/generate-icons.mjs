@@ -100,16 +100,33 @@ function enclosingCircle(points) {
 const circle = enclosingCircle(anchors(body));
 
 /**
- * Places the mark inside a square canvas so that its enclosing circle is centred and has
- * `radius` in canvas units. Working in the circle's terms (rather than the bounding box) is
- * what keeps the mark from being clipped by round icon masks - the default on most phones.
+ * Where the eye sees the middle of the mark: the centre of its bounding box. The minimum
+ * enclosing circle (kept above for the log) is pulled towards the glyph's widest sweep, so
+ * centring on it placed the emblem ~2.7 dp right of the launcher tile's centre; the bounding
+ * box is what every icon grid and design tool centres on.
+ */
+const bounds = (() => {
+  const pts = anchors(body);
+  const xs = pts.map((p) => p[0]);
+  const ys = pts.map((p) => p[1]);
+  const box = { minX: Math.min(...xs), maxX: Math.max(...xs), minY: Math.min(...ys), maxY: Math.max(...ys) };
+  const center = [(box.minX + box.maxX) / 2, (box.minY + box.maxY) / 2];
+  // The circle around that centre that contains every point of the mark: the fit radius.
+  const radius = Math.max(...pts.map((p) => Math.hypot(p[0] - center[0], p[1] - center[1])));
+  return { ...box, center, radius, width: box.maxX - box.minX, height: box.maxY - box.minY };
+})();
+
+/**
+ * Places the mark inside a square canvas so that its visual centre (bounding-box centre) sits
+ * dead centre and every point of it lies within `radius` canvas units of that centre. Stating
+ * the fit as a circle around the centre is what keeps the mark clear of round launcher masks.
  */
 function placement({ canvas, radius }) {
-  const s = radius / circle.r;
+  const s = radius / bounds.radius;
   return {
     s,
-    tx: canvas / 2 - circle.c[0] * s,
-    ty: canvas / 2 - circle.c[1] * s,
+    tx: canvas / 2 - bounds.center[0] * s,
+    ty: canvas / 2 - bounds.center[1] * s,
   };
 }
 
@@ -158,20 +175,21 @@ function vector({ w, h = w, placement: p, fill, doc, extra = '' }) {
 
 // Adaptive icons: a 108 dp canvas, masked by the launcher to a 72 dp shape. Only the centre
 // 66 dp is guaranteed to survive every mask shape, so that is the budget the mark is fitted to:
-// its enclosing circle is held inside a 33 dp radius, which puts the emblem comfortably inside
+// every point of it is held inside a 33 dp radius, which puts the emblem comfortably inside
 // a round, squircle, rounded-square or teardrop launcher mask without ever being cropped.
 const ADAPTIVE = 108;
 const MASK_RADIUS = 36;
 const SAFE_RADIUS = 33; // the guaranteed-visible area: a 66 dp circle centred on the canvas
-// 90% of the mask radius — 32.4 dp of the 33 dp that every launcher shape is guaranteed to
-// show. Bold enough to read as deliberately full (it fills ~90% of the mask across), and still
-// clear of the crop edge on every launcher, so the emblem can never be shaved at the corners.
-const SAFETY = 0.90;
-const adaptive = placement({ canvas: ADAPTIVE, radius: MASK_RADIUS * SAFETY });
-// Share of a canvas that the mark's enclosing circle occupies. Every other placement is stated
-// in these terms, so the launcher icon, the splash, the notification and the in-app mark all
-// show the emblem at one size and keep the brand looking like one piece of work.
-const MARK_SHARE = SAFETY;
+// The emblem's fit radius on the launcher tile: 27 dp, three quarters of the 36 dp mask radius.
+// The glyph then stands 49 dp tall and 44 dp wide in the 72 dp visible disc — a medium mark with
+// an even 11–14 dp of tile around it on every side (Material's keyline for a product logo is
+// 44–52 dp), instead of the earlier 63 dp glyph that ran to within 4 dp of the top and bottom
+// of the mask and sat 2.7 dp right of centre.
+const MARK_RADIUS = 27;
+const adaptive = placement({ canvas: ADAPTIVE, radius: MARK_RADIUS });
+// The in-app mark's fit radius in its 24 dp box: the glyph stands 21 dp tall with an even
+// 1.5 dp margin, centred on its visual centre like the launcher icon.
+const IN_APP_RADIUS = 11.5;
 
 // Splash emblem: radius in the 288 dp splash canvas. The platform reserves the inner 192 dp
 // circle (radius 96), so a 78 dp radius leaves 18 dp of breathing room all round.
@@ -230,7 +248,7 @@ const files = {
   // In-app mark: tinted by the call site, so it works in every palette and in both themes.
   'app/src/main/res/drawable/ic_shinobi_mark.xml': vector({
     w: 24,
-    placement: placement({ canvas: 24, radius: 12 }),
+    placement: placement({ canvas: 24, radius: IN_APP_RADIUS }),
     fill: '#FFFFFFFF',
     doc:
       'The Shinobi emblem for in-app use - the header brand tile, the account sheet and About.\n' +
@@ -385,7 +403,7 @@ if (sharp) {
   );
 
   const mark = (px, fg) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="${px}" height="${px}">
-      <g transform="translate(${placement({ canvas: 24, radius: 12 }).tx.toFixed(3)},${placement({ canvas: 24, radius: 12 }).ty.toFixed(3)}) scale(${placement({ canvas: 24, radius: 12 }).s.toFixed(6)})">
+      <g transform="translate(${placement({ canvas: 24, radius: IN_APP_RADIUS }).tx.toFixed(3)},${placement({ canvas: 24, radius: IN_APP_RADIUS }).ty.toFixed(3)}) scale(${placement({ canvas: 24, radius: IN_APP_RADIUS }).s.toFixed(6)})">
         <path fill="${fg}" d="${body}"/>${eyeSvg(fg)}</g></svg>`;
   const marks = await Promise.all([
     png(mark(96, '#C3434B'), 96),
@@ -444,26 +462,40 @@ if (sharp) {
 // ── Guards ────────────────────────────────────────────────────────────────────────────────────
 // These are the constraints that make the icon correct on every launcher; fail loudly rather
 // than ship an emblem that is cropped, or one that looks undersized next to other apps.
-const markRadius = circle.r * adaptive.s;
+const markRadius = bounds.radius * adaptive.s;
 if (markRadius > SAFE_RADIUS + 1e-6) {
   throw new Error(`launcher emblem is ${markRadius.toFixed(2)} dp but only ${SAFE_RADIUS} dp is safe`);
 }
-if (markRadius < SAFE_RADIUS * 0.85) {
+if (markRadius < SAFE_RADIUS * 0.70) {
   throw new Error(`launcher emblem is ${markRadius.toFixed(2)} dp: too small to look deliberate`);
+}
+// The glyph's bounding box must stay inside the visible disc with a real margin on every side.
+const glyph = {
+  left: bounds.minX * adaptive.s + adaptive.tx,
+  right: bounds.maxX * adaptive.s + adaptive.tx,
+  top: bounds.minY * adaptive.s + adaptive.ty,
+  bottom: bounds.maxY * adaptive.s + adaptive.ty,
+};
+const margins = [glyph.left - (54 - MASK_RADIUS), (54 + MASK_RADIUS) - glyph.right, glyph.top - (54 - MASK_RADIUS), (54 + MASK_RADIUS) - glyph.bottom];
+if (margins.some((m) => m < 8)) throw new Error(`launcher emblem crowds the mask: margins ${margins.map((m) => m.toFixed(1)).join(', ')} dp`);
+if (Math.abs((glyph.left + glyph.right) / 2 - 54) > 0.01 || Math.abs((glyph.top + glyph.bottom) / 2 - 54) > 0.01) {
+  throw new Error('launcher emblem is not centred on the tile');
 }
 if (SPLASH_RADIUS > 96) throw new Error('splash emblem would be clipped by the 192 dp visible circle');
 
 // Regression-only: verify the serialized transforms (the actual Android precision), not
 // just the ideal floating-point placement. No paths or placement rules are changed.
-for (const [canvas, radius] of [[108, MASK_RADIUS * SAFETY], [24, 12], [288, SPLASH_RADIUS]]) {
+for (const [canvas, radius] of [[108, MARK_RADIUS], [24, IN_APP_RADIUS], [24, 11], [288, SPLASH_RADIUS]]) {
   const p = placement({ canvas, radius });
   const scale = Number(p.s.toFixed(6));
-  const center = [Number(p.tx.toFixed(3)) + circle.c[0] * scale,
-    Number(p.ty.toFixed(3)) + circle.c[1] * scale];
+  const center = [Number(p.tx.toFixed(3)) + bounds.center[0] * scale,
+    Number(p.ty.toFixed(3)) + bounds.center[1] * scale];
   if (center.some(value => Math.abs(value - canvas / 2) > 0.001)) {
     throw new Error(`mark center drifted on ${canvas} dp canvas: ${center}`);
   }
 }
 
-console.log('\nmark enclosing circle: centre', circle.c.map((v) => v.toFixed(1)).join(', '), 'radius', circle.r.toFixed(2));
-console.log('adaptive scale', adaptive.s.toFixed(6), '-> mark radius', (circle.r * adaptive.s).toFixed(2), 'dp of', MASK_RADIUS, 'dp mask');
+console.log('\nmark bounding box: centre', bounds.center.map((v) => v.toFixed(1)).join(', '), 'fit radius', bounds.radius.toFixed(2),
+  '(enclosing circle: centre', circle.c.map((v) => v.toFixed(1)).join(', '), 'radius', circle.r.toFixed(2) + ')');
+console.log('adaptive scale', adaptive.s.toFixed(6), '-> fit radius', markRadius.toFixed(2), 'dp of', MASK_RADIUS, 'dp mask;',
+  'glyph', (bounds.width * adaptive.s).toFixed(1), 'x', (bounds.height * adaptive.s).toFixed(1), 'dp; margins', margins.map((m) => m.toFixed(1)).join('/'), 'dp');

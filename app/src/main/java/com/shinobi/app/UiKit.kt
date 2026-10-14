@@ -41,10 +41,12 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.testTag
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -147,8 +149,9 @@ fun ScreenHeader(
  * active palette's primary so it stays legible in light and dark mode and in every theme. The
  * eye slits are holes in the vector, so what shows through them is the tile itself.
  *
- * [size] is the tile. The mark occupies 70% of it, which is the launcher icon's own proportion —
- * the emblem's enclosing circle fills 90% of a mask that is two-thirds of the icon tile — so the
+ * [size] is the tile. The mark's box takes 70% of it, so the glyph stands about 61% of the tile
+ * tall — the launcher icon's own proportion (a 49 dp glyph in the 72 dp visible disc, see
+ * branding/README.md) — and it is centred on its visual centre, as the launcher icon is, so the
  * header, the About sheet and the app icon carry the same weight instead of reading as three
  * different drawings of one shape.
  */
@@ -342,14 +345,18 @@ fun ChannelAvatar(url: String?, name: String, size: Int = 40) {
     }
 }
 
-/** Full-width feed card: rounded thumbnail inside a 28 dp card, then avatar + title + meta. */
+/**
+ * Full-width feed card: rounded thumbnail inside a 28 dp card, then avatar + title + meta.
+ * With [preview] the thumbnail carries the silent inline preview (see [FeedPreview]).
+ */
 @Composable
-fun VideoCard(video: VideoItem, onClick: () -> Unit, modifier: Modifier = Modifier) {
+fun VideoCard(video: VideoItem, onClick: () -> Unit, modifier: Modifier = Modifier, preview: Boolean = false) {
     val c = MaterialTheme.colorScheme
     val menu = LocalVideoMenu.current
     val shape = RoundedCornerShape(28.dp)
     Column(
         modifier = modifier
+            .testTag("video-card")
             .padding(horizontal = 16.dp, vertical = 7.dp)
             .fillMaxWidth()
             .prefetchOnPress(video.id)
@@ -360,6 +367,7 @@ fun VideoCard(video: VideoItem, onClick: () -> Unit, modifier: Modifier = Modifi
     ) {
         Box {
             Thumbnail(video.thumbnail, Modifier.fillMaxWidth().aspectRatio(16f / 9f))
+            if (preview) FeedPreviewSurface(Modifier.matchParentSize().clip(RoundedCornerShape(22.dp)))
             DurationPill(video.durationSec, Modifier.align(Alignment.BottomEnd).padding(10.dp))
             ResumeBar(video.id, Modifier.align(Alignment.BottomStart))
         }
@@ -541,6 +549,11 @@ fun PillButton(text: String, onClick: () -> Unit, icon: ImageVector? = null, mod
  * instead of clipping at enlarged system text sizes. Single-line by default;
  * pass a larger [maxLines] for titles that should wrap naturally first and only
  * shrink if they still overflow. The text stays as large as fits.
+ *
+ * The size follows the room both ways: it shrinks while the text overflows, and when the
+ * room later grows (the nav pill's active tab animates open, so its label is first laid out
+ * in a sliver of its final width) it grows back in step, up to [baseSize], instead of
+ * staying at the smallest size it passed through on the way.
  */
 @Composable
 fun OneLineFitText(
@@ -555,6 +568,8 @@ fun OneLineFitText(
     modifier: Modifier = Modifier,
 ) {
     var size by remember(text) { mutableStateOf(baseSize) }
+    // The width the text last had to shrink for; wider room than this means it may grow.
+    var shrunkFor by remember(text) { mutableIntStateOf(0) }
     Text(
         text,
         color = color,
@@ -566,8 +581,13 @@ fun OneLineFitText(
         textAlign = textAlign,
         modifier = modifier,
         onTextLayout = { result ->
-            if (result.hasVisualOverflow && size > minSize) {
-                size = ((size.value * 0.92f).coerceAtLeast(minSize.value)).sp
+            val room = result.layoutInput.constraints.maxWidth
+            if (result.hasVisualOverflow) {
+                if (size > minSize) size = ((size.value * 0.92f).coerceAtLeast(minSize.value)).sp
+                shrunkFor = room
+            } else if (size < baseSize && shrunkFor > 0 && room != androidx.compose.ui.unit.Constraints.Infinity && room > shrunkFor) {
+                size = (size.value * room / shrunkFor).coerceAtMost(baseSize.value).sp
+                shrunkFor = room
             }
         },
     )

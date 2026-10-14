@@ -29,6 +29,7 @@ import androidx.media3.exoplayer.dash.manifest.DashManifestParser
 import androidx.media3.exoplayer.dash.manifest.Period
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.trackselection.AdaptiveTrackSelection
+import androidx.media3.exoplayer.upstream.DefaultBandwidthMeter
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import androidx.media3.exoplayer.drm.DrmSessionManagerProvider
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
@@ -89,6 +90,16 @@ class PlaybackService : MediaSessionService() {
             .setLoadControl(
                 DefaultLoadControl.Builder()
                     .setBufferDurationsMs(15_000, 50_000, 1_000, 2_000)
+                    .build(),
+            )
+            // Until the connection has been measured, assume a modest one: the first chunk
+            // is then a small SD one and the first frame is on screen sooner; real transfer
+            // samples replace the guess within a couple of seconds and Auto climbs to HD
+            // (YouTube starts the same way). Not persisted, so every session re-measures.
+            .setBandwidthMeter(
+                DefaultBandwidthMeter.Builder(this)
+                    .setInitialBitrateEstimate(1_800_000L)
+                    .setResetOnNetworkTypeChange(true)
                     .build(),
             )
             .setAudioAttributes(

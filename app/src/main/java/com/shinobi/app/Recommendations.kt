@@ -256,9 +256,17 @@ object TasteEngine {
 @Stable
 class PersonalizedHomeState(
     private val scope: CoroutineScope,
+    /** Whether anything has been watched, searched or liked on this phone yet. */
+    private val hasTasteSignal: () -> Boolean = { LocalHistory.hasTasteSignal },
     private val loadSource: (suspend (HomeSource) -> SearchPage)? = null,
 ) {
     var videos by mutableStateOf<List<VideoItem>>(emptyList())
+        private set
+    /**
+     * True on a phone where nothing has been watched, searched or liked yet: Home is then
+     * deliberately empty (no generic filler), and says how to warm it up.
+     */
+    var coldStart by mutableStateOf(false)
         private set
     var shorts by mutableStateOf<List<VideoItem>>(emptyList())
         private set
@@ -305,10 +313,30 @@ class PersonalizedHomeState(
     private fun refresh(explicit: Boolean) {
         job?.cancel()
         if (explicit) refreshToken++
-        val history = RecommendationMixer.diverseSeeds(LocalHistory.entries.filter { it.watchedMs >= 5_000 }.map { it.video }, 3)
+        val topic = selectedTopic
+        if (topic == null && !hasTasteSignal()) {
+            // First launch: nothing to build a feed from, so nothing is shown — not even
+            // generic discovery (product owner, 2026-10-14). The first search, watch or like
+            // changes the taste key and Home fills in from it.
+            coldStart = true
+            topics = emptyList()
+            videos = emptyList()
+            shorts = emptyList()
+            sources = emptyList()
+            exhausted = true
+            error = null
+            loading = false
+            refreshing = false
+            generation++
+            return
+        }
+        coldStart = false
+        // Seeds come from what was actually watched (five seconds or more); a brand-new
+        // history with only glances still counts, so the first feed reflects those videos.
+        val watched = LocalHistory.entries.filter { it.watchedMs >= 5_000 }.ifEmpty { LocalHistory.entries.take(3) }.map { it.video }
+        val history = RecommendationMixer.diverseSeeds(watched, 3)
         val likes = RecommendationMixer.diverseSeeds(LocalHistory.likedVideos.filter { liked -> history.none { it.id == liked.id } }, 2)
         topics = TasteEngine.buildTasteSeeds(LocalHistory.entries, LocalHistory.recentQueries).topicPills
-        val topic = selectedTopic
         val requested = if (topic != null) listOf(HomeSource(topic, RecommendationMixer.Kind.Search)) else buildList {
             add(HomeSource("discovery", RecommendationMixer.Kind.Discovery))
             add(HomeSource("shorts", RecommendationMixer.Kind.Discovery))

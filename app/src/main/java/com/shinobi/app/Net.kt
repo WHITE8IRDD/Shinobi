@@ -51,6 +51,15 @@ object Net {
         } catch (_: SecurityException) { ConnectionState.Unknown }
     }
 
+    /** True on Wi-Fi or any other connection the system doesn't count as metered. */
+    fun isUnmetered(): Boolean {
+        val manager = connectivity ?: return false
+        return try {
+            val caps = manager.getNetworkCapabilities(manager.activeNetwork ?: return false) ?: return false
+            caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_NOT_METERED)
+        } catch (_: SecurityException) { false }
+    }
+
     /** The video-server host YouTube last handed out; usually the same one next time. */
     @Volatile private var mediaHost: String? = null
 

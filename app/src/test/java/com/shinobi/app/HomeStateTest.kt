@@ -91,9 +91,28 @@ class HomeStateTest {
         assertFalse(state.refreshing)
     }
 
+    @Test fun firstLaunchLoadsNothingAndSaysHowToWarmUp() = runTest {
+        var calls = 0
+        val state = PersonalizedHomeState(this, hasTasteSignal = { false }) { calls++; SearchPage(listOf(video("filler")), emptyList(), null) }
+        state.refresh()
+        coroutineContext[Job]!!.children.toList().forEach { it.join() }
+        assertTrue(state.coldStart)
+        assertTrue(state.videos.isEmpty() && state.shorts.isEmpty())
+        assertFalse(state.loading)
+        assertFalse(state.hasMore)
+        assertNull(state.error)
+        assertEquals(0, calls)
+        // A chosen topic is an explicit request and loads even before any taste signal.
+        state.selectTopic("topic")
+        coroutineContext[Job]!!.children.toList().forEach { it.join() }
+        assertFalse(state.coldStart)
+        assertEquals(listOf("filler"), state.videos.map { it.id })
+    }
+
     @Test fun freshLoadPublishesFastSourceBeforeSlowSourceFinishes() = runTest {
-        // Empty history: refresh() loads exactly the discovery + shorts sources.
-        val state = PersonalizedHomeState(this) { request ->
+        // A phone with taste signal but no qualifying seeds: refresh() loads exactly the
+        // discovery + shorts sources.
+        val state = PersonalizedHomeState(this, hasTasteSignal = { true }) { request ->
             if (request.key == "discovery") {
                 withContext(Dispatchers.IO) { delay(5_000) }
                 SearchPage(listOf(video("slow")), emptyList(), null)

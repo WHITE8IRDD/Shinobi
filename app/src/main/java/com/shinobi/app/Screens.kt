@@ -52,6 +52,7 @@ import androidx.compose.material.icons.rounded.TravelExplore
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.VideoLibrary
 import androidx.compose.material.icons.rounded.WatchLater
+import androidx.compose.material.icons.rounded.Whatshot
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -152,6 +153,8 @@ fun HomeScreen(
             onOpen = onOpen,
             onOpenShort = onOpenShort,
             onOpenShortsTab = onOpenShortsTab,
+            onSearch = onSearch,
+            onTrending = { showTrending = true },
         )
     }
 }
@@ -194,7 +197,7 @@ private fun buildForYouFeed(
 }
 
 @Composable
-private fun PersonalizedHomeContent(
+internal fun PersonalizedHomeContent(
     state: PersonalizedHomeState,
     contentPadding: PaddingValues,
     indicatorTop: Dp,
@@ -202,6 +205,8 @@ private fun PersonalizedHomeContent(
     onOpen: (VideoItem) -> Unit,
     onOpenShort: (VideoItem, List<VideoItem>) -> Unit,
     onOpenShortsTab: () -> Unit,
+    onSearch: () -> Unit = {},
+    onTrending: () -> Unit = {},
 ) {
     val c = MaterialTheme.colorScheme
     val list = rememberScrollToTop(scrollToTop)
@@ -216,6 +221,7 @@ private fun PersonalizedHomeContent(
         buildForYouFeed(state.videos, state.shorts.drop(12), mix)
     }
     val shortsShelf = remember(state.shorts) { state.shorts.distinctBy { it.id }.take(20) }
+    HomePreviewDriver(list)
 
     PullToRefresh(
         enabled = true,
@@ -231,7 +237,10 @@ private fun PersonalizedHomeContent(
             }
 
             if (entries.isEmpty()) {
-                if (state.error != null) {
+                if (state.coldStart) {
+                    // First launch: nothing watched, searched or liked yet, so nothing is shown.
+                    item(key = "home-cold-start") { ColdStartHome(onSearch, onTrending) }
+                } else if (state.error != null) {
                     item(key = "home-error") {
                         EmptyState(
                             icon = Icons.Rounded.CloudOff,
@@ -256,7 +265,7 @@ private fun PersonalizedHomeContent(
             } else {
                 items(entries, key = { it.key }, contentType = { if (it is ForYouEntry.Long) "video" else "short" }) { entry ->
                     when (entry) {
-                        is ForYouEntry.Long -> VideoCard(entry.video, onClick = { onOpen(entry.video) })
+                        is ForYouEntry.Long -> VideoCard(entry.video, onClick = { onOpen(entry.video) }, preview = FeedPreview.activeId == entry.video.id)
                         is ForYouEntry.Short -> ShortFeedCard(
                             short = entry.video,
                             onClick = { onOpenShort(entry.video, entry.shelf) },
@@ -286,6 +295,63 @@ private fun PersonalizedHomeContent(
             }
         }
     }
+}
+
+/**
+ * Decides which Home card gets the silent preview: once the list is still, the video card
+ * nearest the upper part of the viewport (where the eye rests) and at least two thirds in
+ * view, after a short dwell so a pause mid-scroll doesn't start one. Scrolling stops the
+ * preview at once; leaving Home or the foreground stops it too.
+ */
+@Composable
+private fun HomePreviewDriver(list: androidx.compose.foundation.lazy.LazyListState) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val setting = AppSettings.feedPreviews
+    val focused by remember(list) {
+        derivedStateOf {
+            if (list.isScrollInProgress) return@derivedStateOf null
+            val info = list.layoutInfo
+            val top = 0
+            val bottom = info.viewportEndOffset - info.afterContentPadding
+            if (bottom <= top) return@derivedStateOf null
+            val eye = top + (bottom - top) * 0.40f
+            info.visibleItemsInfo.asSequence()
+                .filter { (it.key as? String)?.startsWith("fy-v-") == true && it.size > 0 }
+                .filter { item ->
+                    val visible = minOf(item.offset + item.size, bottom) - maxOf(item.offset, top)
+                    visible >= item.size * 0.66f
+                }
+                .minByOrNull { kotlin.math.abs(it.offset + it.size / 2f - eye) }
+                ?.let { (it.key as String).removePrefix("fy-v-") }
+        }
+    }
+    LaunchedEffect(focused, setting) {
+        if (focused == null || setting == FeedPreview.OFF) { FeedPreview.focus(context, null); return@LaunchedEffect }
+        delay(650)
+        FeedPreview.focus(context, focused)
+    }
+    androidx.compose.runtime.DisposableEffect(Unit) { onDispose { FeedPreview.focus(context, null) } }
+    androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_PAUSE) { FeedPreview.stop() }
+}
+
+/**
+ * Home on a phone with no taste signal yet. Deliberately no videos: the feed is built from
+ * what the user watches, searches and likes, so until then it only says how to warm it up.
+ */
+@Composable
+internal fun ColdStartHome(onSearch: () -> Unit, onTrending: () -> Unit) {
+    EmptyState(
+        icon = Icons.Rounded.AutoAwesome,
+        title = Loc.t("Your feed starts with you"),
+        body = Loc.t("Search or watch a few videos to warm up your feed."),
+        modifier = Modifier.padding(top = 24.dp),
+        action = {
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                PillButton(Loc.t("Search"), onSearch, icon = Icons.Rounded.Search)
+                TonalPillButton(Loc.t("Trending"), onTrending, icon = Icons.Rounded.Whatshot)
+            }
+        },
+    )
 }
 
 /**
@@ -382,33 +448,37 @@ internal fun HomeTasteFilterRow(
             icon = Icons.Rounded.AutoAwesome,
             onClick = { onSelectTopic(null) },
         )
-        FilterPill(label = Loc.t("Trending"), selected = trending, onClick = onTrending)
+        FilterPill(label = Loc.t("Trending"), selected = trending, icon = Icons.Rounded.Whatshot, onClick = onTrending)
         FilterPill(
             label = Loc.t("Shorts"),
             selected = false,
             icon = Icons.Rounded.PlayArrow,
             onClick = onOpenShorts,
         )
-        topics.distinctBy { it.lowercase(java.util.Locale.ROOT) }.filterNot { topic ->
-            listOf("For you", "Trending", "Shorts", "Mix Shorts with videos").any { topic.equals(Loc.t(it), true) || topic.equals(it, true) }
-        }.take(8).forEach { topic ->
+        // The taste topics and the Shorts mixing toggle describe "For you"; while Trending is
+        // open its own chart chips (Music, Movies, Gaming, Podcasts) take their place below.
+        if (!trending) {
+            topics.distinctBy { it.lowercase(java.util.Locale.ROOT) }.filterNot { topic ->
+                listOf("For you", "Trending", "Shorts", "Mix Shorts with videos").any { topic.equals(Loc.t(it), true) || topic.equals(it, true) }
+            }.take(8).forEach { topic ->
+                FilterPill(
+                    label = topic,
+                    selected = selected.equals(topic, ignoreCase = true),
+                    onClick = { onSelectTopic(topic) },
+                )
+            }
+            // One tap between "Shorts mixed into For you" and "Shorts kept in their own shelf".
+            val mix = AppSettings.mixShortsInFeed
             FilterPill(
-                label = topic,
-                selected = !trending && selected.equals(topic, ignoreCase = true),
-                onClick = { onSelectTopic(topic) },
+                label = Loc.t("Mix Shorts with videos"),
+                selected = mix,
+                icon = Icons.Rounded.SmartDisplay,
+                onClick = {
+                    view.performHapticFeedback(android.view.HapticFeedbackConstants.CONTEXT_CLICK)
+                    AppSettings.mixShortsInFeed = !mix
+                },
             )
         }
-        // One tap between "Shorts mixed into For you" and "Shorts kept in their own shelf".
-        val mix = AppSettings.mixShortsInFeed
-        FilterPill(
-            label = Loc.t("Mix Shorts with videos"),
-            selected = mix,
-            icon = Icons.Rounded.SmartDisplay,
-            onClick = {
-                view.performHapticFeedback(android.view.HapticFeedbackConstants.CONTEXT_CLICK)
-                AppSettings.mixShortsInFeed = !mix
-            },
-        )
         Box(
             modifier = Modifier
                 .size(36.dp)
@@ -423,7 +493,7 @@ internal fun HomeTasteFilterRow(
 }
 
 @Composable
-private fun FilterPill(
+internal fun FilterPill(
     label: String,
     selected: Boolean,
     icon: ImageVector? = null,

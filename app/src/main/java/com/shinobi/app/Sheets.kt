@@ -36,6 +36,7 @@ import androidx.compose.material.icons.rounded.PlaylistPlay
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Subtitles
 import androidx.compose.material.icons.rounded.WatchLater
+import androidx.compose.material.icons.rounded.Wifi
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -568,5 +569,36 @@ fun FeedSettings() {
             checked = AppSettings.shortsAutoHide,
             onCheckedChange = { AppSettings.shortsAutoHide = it },
         )
+        Spacer(Modifier.height(12.dp))
+        Text(Loc.t("Previews on Home"), fontWeight = FontWeight.Bold, fontSize = 14.sp)
+        Spacer(Modifier.height(4.dp))
+        Text(
+            Loc.t("Play a few silent seconds of the video in view, like the YouTube app."),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontSize = 12.5.sp,
+            lineHeight = 17.sp,
+        )
+        Spacer(Modifier.height(10.dp))
+        val previews = AppSettings.feedPreviews
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            SettingChoicePill(
+                label = Loc.t("Always"),
+                icon = Icons.Rounded.SmartDisplay,
+                selected = previews == FeedPreview.ALWAYS,
+                modifier = Modifier.weight(1f),
+            ) { AppSettings.feedPreviews = FeedPreview.ALWAYS }
+            SettingChoicePill(
+                label = Loc.t("Wi-Fi only"),
+                icon = Icons.Rounded.Wifi,
+                selected = previews == FeedPreview.WIFI,
+                modifier = Modifier.weight(1f),
+            ) { AppSettings.feedPreviews = FeedPreview.WIFI }
+            SettingChoicePill(
+                label = Loc.t("Off"),
+                icon = Icons.Rounded.VisibilityOff,
+                selected = previews == FeedPreview.OFF,
+                modifier = Modifier.weight(1f),
+            ) { AppSettings.feedPreviews = FeedPreview.OFF; FeedPreview.stop() }
+        }
     }
 }
