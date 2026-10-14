@@ -3,6 +3,8 @@ name: Android
 on:
   push:
     branches: [main, "arena/**"]
+    # Drafts are tagged (draft-1, draft-2, …); an official release is tagged v1.0.0.
+    tags: ["draft-*", "v*"]
   pull_request:
   workflow_dispatch:
     inputs:
@@ -109,10 +111,11 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-  # Publishing is explicit: run this workflow manually with a tag and a name and the APKs
-  # built by the job above are attached to a GitHub release. Nothing else publishes.
+  # Publishing is explicit and always follows a passing build: pushing a draft-*/v* tag, or
+  # running this workflow manually with a tag and a name, attaches the APKs built by the job
+  # above to a GitHub release. Nothing else publishes.
   release:
-    if: github.event_name == 'workflow_dispatch' && inputs.tag != ''
+    if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && inputs.tag != '')
     needs: build
     runs-on: ubuntu-latest
     permissions:
@@ -127,13 +130,19 @@ jobs:
       - name: Publish the release with its APKs
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ inputs.tag }}
-          NAME: ${{ inputs.name }}
+          TAG: ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag }}
+          NAME: ${{ github.ref_type == 'tag' && '' || inputs.name }}
           SHA: ${{ github.sha }}
         run: |
           set -e
-          NAME="${NAME:-Official release}"
+          # "draft-1" becomes "Draft 1" when no nicer name was given.
+          if [ -z "$NAME" ]; then
+            NAME=$(echo "$TAG" | tr '-' ' ' | awk '{for(i=1;i<=NF;i++){$i=toupper(substr($i,1,1)) substr($i,2)}}1')
+          fi
           SLUG="${NAME// /-}"
+          TARGET=""
+          # A pushed tag already names its commit; only a manual run has to point at one.
+          if [ "${GITHUB_REF_TYPE}" != "tag" ]; then TARGET="--target $SHA"; fi
           mkdir -p publish
           cp apks/release/app-release.apk "publish/Shinobi-${SLUG}-release.apk"
           cp apks/debug/app-debug.apk "publish/Shinobi-${SLUG}-debug.apk"
@@ -152,4 +161,4 @@ jobs:
           \`Shinobi-${SLUG}-debug.apk\` is the same code without minification, useful if a bug
           needs logs.
           EOF
-          gh release create "$TAG" --title "$NAME" --notes-file notes.md --target "$SHA" publish/*.apk
+          gh release create "$TAG" --title "$NAME" --notes-file notes.md $TARGET publish/*.apk
