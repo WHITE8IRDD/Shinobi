@@ -73,25 +73,7 @@ jobs:
 
       - name: Publish failure log as annotations
         if: failure()
-        run: |
-          python3 - <<'PY'
-          import os, re
-          def escape(text):
-              return text.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
-          if not os.path.exists("build.log"):
-              print("::error::Gradle produced no build.log")
-              raise SystemExit(0)
-          with open("build.log", "rb") as f:
-              lines = f.read().decode("utf-8", "replace").splitlines()
-          key = [l for l in lines if re.search(r"FAILED|error:|^e: |What went wrong|Caused by|tests? completed|> There were", l)][-40:]
-          if key:
-              print("::error title=failure summary::" + escape("\n".join(key)))
-          tail = "\n".join(lines[-1500:])
-          # GitHub truncates an annotation message at 4096 characters: keep chunks well under.
-          chunks = [tail[i:i + 3800] for i in range(0, len(tail), 3800)][:22]
-          for i, chunk in enumerate(chunks):
-              print(f"::error title=log {i + 1}/{len(chunks)}::{escape(chunk)}")
-          PY
+        run: python3 .github/scripts/annotate_failure.py build.log
 
       - name: Upload build log
         if: always()
@@ -133,32 +115,67 @@ jobs:
           TAG: ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag }}
           NAME: ${{ github.ref_type == 'tag' && '' || inputs.name }}
           SHA: ${{ github.sha }}
+          REPO: ${{ github.repository }}
+          REF_TYPE: ${{ github.ref_type }}
         run: |
-          set -e
-          # "draft-1" becomes "Draft 1" when no nicer name was given.
-          if [ -z "$NAME" ]; then
-            NAME=$(echo "$TAG" | tr '-' ' ' | awk '{for(i=1;i<=NF;i++){$i=toupper(substr($i,1,1)) substr($i,2)}}1')
-          fi
-          SLUG="${NAME// /-}"
-          TARGET=""
-          # A pushed tag already names its commit; only a manual run has to point at one.
-          if [ "${GITHUB_REF_TYPE}" != "tag" ]; then TARGET="--target $SHA"; fi
-          mkdir -p publish
-          cp apks/release/app-release.apk "publish/Shinobi-${SLUG}-release.apk"
-          cp apks/debug/app-debug.apk "publish/Shinobi-${SLUG}-debug.apk"
-          ls -l publish
-          cat > notes.md <<EOF
-          Built from the source at this tag by GitHub Actions, with unit tests and both
-          zero-ads guards passing in the same run.
+          set -o pipefail
+          {
+            set -e
+            # "draft-1" becomes "Draft 1" when no nicer name was given.
+            if [ -z "$NAME" ]; then
+              NAME=$(echo "$TAG" | tr '-' ' ' | awk '{for(i=1;i<=NF;i++){$i=toupper(substr($i,1,1)) substr($i,2)}}1')
+            fi
+            SLUG="${NAME// /-}"
+            echo "Release tag '$TAG', title '$NAME'"
 
-          **Install (sideload):** download \`Shinobi-${SLUG}-release.apk\`, open it on the phone
-          and allow installing from this source when Android asks. Android 8.0 (API 26) or newer
-          is required. The release build is signed with a locally generated key, so it installs
-          over any earlier Shinobi build and needs no account: search, playback, captions and
-          signed-out history work straight away.
+            echo "--- artifact contents ---"
+            find apks -type f -printf '%p  %s bytes\n' | sort
 
-          \`Shinobi-${SLUG}-release.apk\` is the minified build made for daily use;
-          \`Shinobi-${SLUG}-debug.apk\` is the same code without minification, useful if a bug
-          needs logs.
-          EOF
-          gh release create "$TAG" --title "$NAME" --notes-file notes.md $TARGET publish/*.apk
+            RELEASE_APK=$(find apks -name 'app-release.apk' | head -n 1)
+            DEBUG_APK=$(find apks -name 'app-debug.apk' | head -n 1)
+            if [ -z "$RELEASE_APK" ] || [ -z "$DEBUG_APK" ]; then
+              echo "::error::the shinobi-apks artifact did not contain both APKs"
+              exit 1
+            fi
+            mkdir -p publish
+            cp "$RELEASE_APK" "publish/Shinobi-${SLUG}-release.apk"
+            cp "$DEBUG_APK" "publish/Shinobi-${SLUG}-debug.apk"
+            ls -l publish
+
+            # Distinguish "the token may not write" from a mistake in this script, and say so
+            # in the log rather than leaving a bare exit code behind.
+            probe=$(curl -s -o /dev/null -w '%{http_code}' -X DELETE \
+              -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/${REPO}/git/refs/heads/definitely-does-not-exist")
+            case "$probe" in
+              403) echo "::error::GITHUB_TOKEN cannot write to this repository (probe returned 403): set Settings -> Actions -> General -> Workflow permissions to 'Read and write permissions'." ; exit 1 ;;
+              *) echo "Token write probe returned $probe, so the token may write." ;;
+            esac
+
+            if [ "$REF_TYPE" != "tag" ]; then TARGET="--target $SHA"; else TARGET=""; fi
+            if gh release view "$TAG" >/dev/null 2>&1; then
+              echo "Release $TAG already exists: uploading the APKs to it instead."
+              gh release upload "$TAG" publish/*.apk --clobber
+            else
+              {
+                printf 'Built from the source at this tag by GitHub Actions, with unit tests and both\n'
+                printf 'zero-ads guards passing in the same run.\n\n'
+                printf '**Install (sideload):** download `Shinobi-%s-release.apk`, open it on the phone\n' "$SLUG"
+                printf 'and allow installing from this source when Android asks. Android 8.0 (API 26) or\n'
+                printf 'newer is required. The release build is signed with a locally generated key, so it\n'
+                printf 'installs over any earlier Shinobi build, and it needs no account: search, playback,\n'
+                printf 'captions and signed-out history work straight away.\n\n'
+                printf '`Shinobi-%s-release.apk` is the minified build made for daily use;\n' "$SLUG"
+                printf '`Shinobi-%s-debug.apk` is the same code without minification, useful if a bug\n' "$SLUG"
+                printf 'needs logs.\n'
+              } > notes.md
+              gh release create "$TAG" --title "$NAME" --notes-file notes.md $TARGET publish/*.apk
+            fi
+
+            echo "--- published ---"
+            gh release view "$TAG"
+          } 2>&1 | tee release.log
+
+      - name: Publish failure log as annotations
+        if: failure()
+        run: python3 .github/scripts/annotate_failure.py release.log 200
