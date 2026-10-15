@@ -170,11 +170,12 @@ class PlayerState(private val scope: CoroutineScope) {
     fun enterShortsMode() {
         if (inShortsMode) return
         val p = controller
-        suspendedVideo = current?.takeIf { !it.isShort }?.let { item ->
+        suspendedVideo = pendingRestore ?: current?.takeIf { !it.isShort }?.let { item ->
             SuspendedVideo(item, p?.let { (0 until it.mediaItemCount).map(it::getMediaItemAt) }.orEmpty(),
                 p?.currentMediaItemIndex ?: 0, p?.currentPosition ?: positionMs,
                 p?.playWhenReady ?: isPlaying)
         }
+        pendingRestore = null
         loadJob?.cancel()
         pendingStart = null
         p?.pause()

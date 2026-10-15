@@ -214,6 +214,22 @@ class PlayerRegressionTest {
         }
     }
 
+    @Test fun explicitlyOpeningNormalVideoDoesNotRestoreOldVideoOverIt() {
+        compose.runOnIdle {
+            val state = offlineState()
+            val first = VideoItem("offline-original", "Original", "", null, null, null, 300, 0, null)
+            val next = first.copy(id = "offline-new", title = "New video")
+            state.open(first, expand = false)
+            state.enterShortsMode()
+            state.openShort(first.copy(id = "offline-short", isShort = true))
+            state.open(next)
+            state.exitShortsMode()
+            assertEquals(next.id, state.current?.id)
+            assertTrue(state.expanded)
+            assertFalse(state.inShortsMode)
+        }
+    }
+
     @Test fun shortsTemporarilyOwnsDecoderAndRestoresPausedMiniPlayerAndQueue() {
         lateinit var backend: ExoPlayer
         lateinit var session: MediaSession
@@ -260,6 +276,16 @@ class PlayerRegressionTest {
                 assertFalse(controller.playWhenReady)
                 state.exitShortsMode()
                 assertTrue("playing mini-player must resume on exit", controller.playWhenReady)
+                state.enterShortsMode()
+                state.controller = null // reconnect while Shorts temporarily owns playback
+                state.exitShortsMode()
+                state.enterShortsMode()
+                state.exitShortsMode()
+                state.controller = controller
+                state.onConnected()
+                assertEquals("offline-normal", state.current?.id)
+                assertEquals(12000L, controller.currentPosition)
+                assertEquals(2, controller.mediaItemCount)
             }
         } finally {
             compose.runOnIdle { controller.release(); session.release(); backend.release() }

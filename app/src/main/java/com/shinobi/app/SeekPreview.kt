@@ -67,14 +67,18 @@ internal fun SeekThumbnail(storyboard: SeekStoryboard?, thumbnail: String?, posi
                 ImageRequest.Builder(context).data(frame.url).size(Size.ORIGINAL).build()
             }
             val painter = rememberAsyncImagePainter(request)
-            Canvas(imageModifier) {
-                val sheet = painter.intrinsicSize
-                if (sheet.width.isFinite() && sheet.height.isFinite() && sheet.width > 0 && sheet.height > 0) {
-                    clipRect {
-                        withTransform({
-                            scale(size.width / storyboard.width, size.height / storyboard.height, pivot = androidx.compose.ui.geometry.Offset.Zero)
-                            translate(-frame.left.toFloat(), -frame.top.toFloat())
-                        }) { with(painter) { draw(sheet) } }
+            Box(imageModifier) {
+                // Use the already-cached video poster while a sheet loads or is unavailable.
+                Thumbnail(thumbnail, Modifier.fillMaxSize(), radius = 6)
+                Canvas(Modifier.fillMaxSize()) {
+                    val sheet = painter.intrinsicSize
+                    if (sheet.width.isFinite() && sheet.height.isFinite() && sheet.width > 0 && sheet.height > 0) {
+                        clipRect {
+                            withTransform({
+                                scale(size.width / storyboard.width, size.height / storyboard.height, pivot = androidx.compose.ui.geometry.Offset.Zero)
+                                translate(-frame.left.toFloat(), -frame.top.toFloat())
+                            }) { with(painter) { draw(sheet) } }
+                        }
                     }
                 }
             }
