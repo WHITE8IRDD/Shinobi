@@ -13,7 +13,7 @@ class ShortsFeedLifecycleTest {
     @Test fun lateInitialPageCannotReplaceAnExplicitlyOpenedShort() = runTest {
         val state = ShortsFeedState(this, search = { _, _ ->
             withContext(NonCancellable) { delay(100) }; page("stale")
-        }, fallbackSearch = { emptyList() }, prefetch = {})
+        }, fallbackSearch = { emptyList() }, prefetch = {}, dispatcher = StandardTestDispatcher(testScheduler))
         state.ensureLoaded(); runCurrent()
         state.openWith(item("chosen"), (0..10).map { item("shelf-$it") })
         advanceUntilIdle()
@@ -28,7 +28,7 @@ class ShortsFeedLifecycleTest {
         val state = ShortsFeedState(this, search = { _, token ->
             if (token != null) { withContext(NonCancellable) { delay(1000) }; page("stale-more") }
             else page(if (refresh) "fresh" else "first", "next")
-        }, fallbackSearch = { emptyList() }, prefetch = {})
+        }, fallbackSearch = { emptyList() }, prefetch = {}, dispatcher = StandardTestDispatcher(testScheduler))
         state.ensureLoaded(); advanceUntilIdle()
         state.loadMore(); runCurrent()
         refresh = true
@@ -39,7 +39,7 @@ class ShortsFeedLifecycleTest {
     }
 
     @Test fun shelfIsDeduplicatedAndRetentionIsBoundedWithoutMovingFirstItem() = runTest {
-        val state = ShortsFeedState(this, search = { _, _ -> page("unused") }, fallbackSearch = { emptyList() }, prefetch = {})
+        val state = ShortsFeedState(this, search = { _, _ -> page("unused") }, fallbackSearch = { emptyList() }, prefetch = {}, dispatcher = StandardTestDispatcher(testScheduler))
         val selected = item("chosen")
         state.openWith(selected, listOf(selected, selected) + (0..499).map { item("shelf-$it") } + item("shelf-1"))
         assertEquals("chosen", state.shorts.first().id)

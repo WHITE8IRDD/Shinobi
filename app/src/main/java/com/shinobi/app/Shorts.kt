@@ -126,6 +126,7 @@ class ShortsFeedState(
     private val search: suspend (String, String?) -> SearchPage = InnerTube::searchPage,
     private val fallbackSearch: suspend (String) -> List<VideoItem> = YouTube::search,
     private val prefetch: (String) -> Unit = StreamCache::prefetch,
+    private val dispatcher: kotlinx.coroutines.CoroutineDispatcher = Dispatchers.IO,
 ) {
     var shorts by mutableStateOf<List<VideoItem>>(emptyList())
         private set
@@ -256,10 +257,10 @@ class ShortsFeedState(
         moreJob = scope.launch {
             try {
                 val (gathered, next) = coroutineScope {
-                    val continuation = tokenPair?.let { (q, token) -> async(Dispatchers.IO) { safeSearch(q, token)?.let { q to it } } }
+                    val continuation = tokenPair?.let { (q, token) -> async(dispatcher) { safeSearch(q, token)?.let { q to it } } }
                     val freshQuery = queries.firstOrNull { it != tokenPair?.first }
                         ?: fallbackTopics[(pageCounter++) % fallbackTopics.size]
-                    val fresh = async(Dispatchers.IO) { safeSearch(freshQuery, null)?.let { freshQuery to it } }
+                    val fresh = async(dispatcher) { safeSearch(freshQuery, null)?.let { freshQuery to it } }
                     val results = listOfNotNull(continuation?.await(), fresh.await())
                     if (results.isEmpty()) throw java.io.IOException("Couldn't load Shorts")
                     val items = results.flatMap { (_, page) ->
@@ -289,7 +290,7 @@ class ShortsFeedState(
 
     private suspend fun fetchShortsBatch(queries: List<String>): Pair<List<VideoItem>, Pair<String, String>?> = coroutineScope {
         val pages = queries.map { q ->
-            async(Dispatchers.IO) {
+            async(dispatcher) {
                 val page = safeSearch(q, null)
                 val items = if (page != null && (page.shorts.isNotEmpty() || page.videos.isNotEmpty())) {
                     page.shorts + page.videos.filter { it.isShort || it.durationSec in 1..90 }.map { it.copy(isShort = true) }

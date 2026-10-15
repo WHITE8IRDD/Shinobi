@@ -23,7 +23,8 @@ for path in pathlib.Path(sys.argv[1]).rglob('*.json'):
     for benchmark in data.get('benchmarks', []):
         found += 1
         lines = [f"RELEASE PERF: {benchmark.get('name')} (minified target; emulator)"]
-        for name, metric in benchmark.get('metrics', {}).items():
+        metrics = {**benchmark.get('metrics', {}), **benchmark.get('sampledMetrics', {})}
+        for name, metric in metrics.items():
             values = []
             def flatten(value):
                 if isinstance(value, list):

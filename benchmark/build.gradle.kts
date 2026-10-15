@@ -15,6 +15,7 @@ android {
     buildTypes {
         create("benchmark") {
             isDebuggable = true // test driver only; the target app is minified/non-debuggable
+            signingConfig = signingConfigs.getByName("debug")
             matchingFallbacks += listOf("release")
         }
     }
