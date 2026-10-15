@@ -509,8 +509,12 @@ fun ShortsScreen(
         if (!showSurface) return@LaunchedEffect
         snapshotFlow { pagerState.settledPage }.collect { page ->
             shorts.getOrNull(page)?.let { item ->
-                commentsOpenFor = null
-                player.openShort(item)
+                // Appending a prefetched batch restarts this effect, not the user's
+                // playback intent. Never unpause the same Short on a feed-list update.
+                if (!player.inShortsMode || player.current?.id != item.id || player.error != null) {
+                    commentsOpenFor = null
+                    player.openShort(item)
+                }
                 shorts.getOrNull(page + 1)?.let { StreamCache.prefetch(it.id) }
                 shorts.getOrNull(page + 2)?.let { StreamCache.prefetch(it.id) }
                 if (page >= shorts.size - 3) state.loadMore(seedItem = item)
