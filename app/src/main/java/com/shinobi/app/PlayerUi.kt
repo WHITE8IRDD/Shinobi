@@ -615,13 +615,8 @@ private fun RowScope.MiniDetails(state: PlayerState, interactive: Boolean) {
                 Icon(Icons.Rounded.Close, Loc.t("Close"), tint = c.onSurfaceVariant)
             }
         }
-        val progress = if (state.durationMs > 0) (state.positionMs.toFloat() / state.durationMs).coerceIn(0f, 1f) else 0f
-        Box(
-            Modifier.align(Alignment.BottomStart).padding(end = 96.dp, bottom = 7.dp)
-                .fillMaxWidth().height(4.dp).clip(CircleShape).background(c.primary.copy(alpha = 0.18f)),
-        ) {
-            Box(Modifier.fillMaxHeight().fillMaxWidth(progress).clip(CircleShape).background(c.primary))
-        }
+        MiniProgress(state, Modifier.align(Alignment.BottomStart).padding(end = 96.dp, bottom = 7.dp)
+            .fillMaxWidth().height(4.dp).clip(CircleShape))
     }
 }
 
@@ -656,4 +651,16 @@ private fun MorphingMiniDetails(state: PlayerState, morph: PlayerMorph) {
             .graphicsLayer { alpha = 1f - ramp(morph.progress.value, 0f, 0.3f) },
         verticalAlignment = Alignment.CenterVertically,
     ) { MiniDetails(state, interactive = false) }
+}
+
+/** Ticking progress invalidates only this draw, not title/button measurement and composition. */
+@Composable
+private fun MiniProgress(state: PlayerState, modifier: Modifier) {
+    val color = MaterialTheme.colorScheme.primary
+    androidx.compose.foundation.Canvas(modifier) {
+        val duration = state.durationMs
+        val fraction = if (duration > 0) (state.positionMs.toFloat() / duration).coerceIn(0f, 1f) else 0f
+        drawRect(color.copy(alpha = 0.18f))
+        drawRect(color, size = androidx.compose.ui.geometry.Size(size.width * fraction, size.height))
+    }
 }

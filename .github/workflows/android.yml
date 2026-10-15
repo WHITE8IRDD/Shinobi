@@ -162,6 +162,14 @@ jobs:
           else
             echo "No screenshots directory."
           fi
+      - name: Report measured frame timings
+        if: always()
+        run: |
+          python3 - <<'PYTHON'
+          import pathlib
+          for path in pathlib.Path('screenshots').rglob('performance-scroll*.txt'):
+              print('::notice::' + path.read_text().replace('%', '%25').replace('\n', '%0A'))
+          PYTHON
       - name: Upload screenshots
         if: always()
         uses: actions/upload-artifact@v4

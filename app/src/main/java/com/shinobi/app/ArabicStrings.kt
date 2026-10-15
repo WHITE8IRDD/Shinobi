@@ -13,6 +13,9 @@ internal val ARABIC_STRINGS: Map<String, String> = mapOf(
     // ── Shell, navigation, shared actions ──────────────────────────────────────
     "Trending" to "المحتوى الرائج",
     "Trending on YouTube" to "المحتوى الرائج على YouTube",
+    "YouTube no longer publishes a combined regional Trending list. Choose an available category chart below; gaming is never substituted for All." to "لم يعد YouTube ينشر قائمة رائجة عامة حسب البلد. اختر إحدى قوائم الفئات المتاحة؛ لن تُستبدل القائمة العامة بمحتوى الألعاب.",
+    "Mute" to "كتم الصوت",
+    "Unmute" to "إلغاء كتم الصوت",
     "Trending unavailable" to "المحتوى الرائج غير متاح",
     "Country" to "البلد",
     "Choose country" to "اختيار البلد",

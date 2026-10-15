@@ -57,4 +57,19 @@ class TrendingStateTest {
         assertEquals(TrendingCategory.General, state.categoryFor("MA"))
         assertEquals(TrendingCategory.Movies, state.categoryFor("GB"))
     }
+    @Test fun retiredCombinedFeedNeverFallsBackToGamingOrSearch() = runTest {
+        val calls = mutableListOf<TrendingCategory>()
+        val state = TrendingState(this) { _, category ->
+            calls += category
+            if (category == TrendingCategory.General) throw GeneralTrendingUnavailable()
+            chart(category.name)
+        }
+        state.load("MA"); advanceUntilIdle()
+        assertEquals(listOf(TrendingCategory.General), calls)
+        assertTrue(state.videos.isEmpty())
+        assertTrue(state.error!!.contains("no longer publishes"))
+        state.select("MA", TrendingCategory.Podcasts); advanceUntilIdle()
+        assertEquals("Podcasts", state.videos.single().id)
+    }
+
 }

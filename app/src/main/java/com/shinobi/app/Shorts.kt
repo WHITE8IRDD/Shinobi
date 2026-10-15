@@ -898,11 +898,11 @@ internal fun ShortPageContent(
             visible = chromeVisible || !isActivePage,
             enter = fadeIn(tween(180)) + scaleIn(initialScale = 0.94f),
             exit = fadeOut(tween(140)) + scaleOut(targetScale = 0.94f),
-            modifier = Modifier.align(AbsoluteAlignment.BottomRight).testTag("shorts-action-rail"),
+            modifier = Modifier.align(AbsoluteAlignment.BottomRight),
         ) {
         Column(
             modifier = Modifier
-                .absolutePadding(right = 8.dp, bottom = bottomInset + 48.dp),
+                .absolutePadding(right = 8.dp, bottom = bottomInset + 48.dp).testTag("shorts-action-rail"),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
@@ -944,12 +944,12 @@ internal fun ShortPageContent(
             visible = chromeVisible || !isActivePage,
             enter = fadeIn(tween(180)) + slideInVertically(tween(200)) { it / 4 },
             exit = fadeOut(tween(140)) + slideOutVertically(tween(170)) { it / 4 },
-            modifier = Modifier.align(AbsoluteAlignment.BottomLeft).testTag("shorts-metadata"),
+            modifier = Modifier.align(AbsoluteAlignment.BottomLeft),
         ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .absolutePadding(left = 12.dp, right = 88.dp, bottom = bottomInset + 44.dp),
+                .absolutePadding(left = 12.dp, right = 88.dp, bottom = bottomInset + 44.dp).testTag("shorts-metadata"),
         ) {
             if (channelName.isNotBlank()) {
                 Row(

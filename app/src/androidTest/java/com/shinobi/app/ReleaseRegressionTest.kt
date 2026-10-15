@@ -72,8 +72,12 @@ class ReleaseRegressionTest {
         lateinit var backend: ExoPlayer
         lateinit var session: MediaSession
         lateinit var future: com.google.common.util.concurrent.ListenableFuture<MediaController>
+        val ready = java.util.concurrent.atomic.AtomicBoolean(false)
         compose.runOnIdle {
             backend = ExoPlayer.Builder(compose.activity).build()
+            backend.addListener(object : Player.Listener {
+                override fun onPlaybackStateChanged(state: Int) { ready.set(state == Player.STATE_READY) }
+            })
             backend.setMediaItem(MediaItem.Builder().setMediaId(asset).setUri("asset:///$asset").build())
             session = MediaSession.Builder(compose.activity, backend).build()
             future = MediaController.Builder(compose.activity, session.token).buildAsync()
@@ -91,7 +95,7 @@ class ReleaseRegressionTest {
             controller.addListener(state.listener)
             controller.prepare()
         }
-        compose.waitUntil(15_000) { controller.playbackState == Player.STATE_READY && state.details != null }
+        compose.waitUntil(15_000) { ready.get() && state.details != null }
         compose.runOnIdle { state.syncFromPlayer() }
         return Fixture(backend, session, controller, state, scope)
     }
