@@ -9,6 +9,17 @@
 
 Shinobi is built with Kotlin, Jetpack Compose and AndroidX Media3. It is a community, sideload-first app—not an official YouTube or Google product.
 
+## 2.0 release candidate
+
+Fullscreen storyboard-seeking safety, a dedicated Shorts layout and bounded playback work
+are being verified for **SHINOBI 2.0**. See [changes and limitations](docs/releases/v2.0.md)
+and the [acceptance checklist](docs/testing/2.0-acceptance.md). CI builds a candidate named
+`SHINOBI 2.0.apk`; a build artifact is not a published or physically-device-verified release.
+
+**Trending limitation:** YouTube's combined regional Trending endpoint currently returns
+HTTP 400, including for Morocco. All no longer silently means Gaming. Unavailable general
+charts are reported honestly; the available category charts require an explicit choice.
+
 ## What it does
 
 ### Watch, your way
@@ -41,15 +52,16 @@ Shinobi is built with Kotlin, Jetpack Compose and AndroidX Media3. It is a commu
 - Feed ranking and parsing run off the UI thread. Lists and caches are bounded, and pagination stops on duplicate pages or repeated tokens instead of spinning forever. These are responsiveness safeguards, not a guarantee of identical performance on every phone or network.
 
 ### Real trending, a feed that starts with you, and previews (1.6)
-- **Trending is YouTube's own.** YouTube retired its single Trending page in July 2025; what remains are the per-category charts the YouTube app shows. Home → Trending lists exactly those — Music and Movies & trailers from YouTube Charts where YouTube publishes them, Gaming and Podcasts everywhere — for a country that is detected automatically (SIM, network, locale, then a silent YouTube check) and can be changed with the picker on top. Chart chips sit below the country and only offer charts YouTube publishes for it.
+- **Trending is not fabricated.** All requests the original public regional feed. YouTube retired that combined page in July 2025, and it currently returns HTTP 400. The app reports that absence rather than substituting Gaming, search results, or another country's ranking. Music and Movies & trailers are offered only in YouTube Charts' supported countries; Gaming and Podcasts are explicit category choices. Country is detected automatically and can be changed with the picker.
 - **First launch is empty on purpose.** Home shows *Search or watch a few videos to warm up your feed.* instead of random videos. Afterwards the feed is built like the open-source clients (NewPipe, LibreTube, PipePipe and Tubular all avoid a history-driven home, so Shinobi mirrors their building blocks): watch-next for diverse history seeds, likes and recent searches, round-robin with per-seed and per-channel caps, plus YouTube's own suggestions, so no single topic floods it.
 - **Previews on Home.** When the list settles on a video, a few silent seconds play in its card (as in the YouTube app); a tap still opens it and scrolling stops it at once. **Settings → Feed → Previews on Home:** Always / Wi-Fi only / Off.
 - **Swipe between tabs** left or right, mirrored in Arabic; vertical lists and horizontal shelves keep their own gestures.
 - **Faster starts:** the player opens on a small first chunk and climbs to HD within seconds, the queue head and the top related video are extracted ahead of time, and a previewed card opens with no extraction wait.
 - The navigation pill fits every label — "Subscriptions" included — on 320 dp screens and at large font sizes; the logo is centred on its real bounding box in the launcher icon and the header tile.
 
-### Shorts, properly full screen
-- The Shorts tab gives the video the whole screen: the floating tab bar and every overlay control fade away while a Short plays and come straight back on a tap. Tap also pauses, double-tap likes, long-press opens the same options sheet as any other video. Prefer the controls to stay put? Turn it off in **Settings → Feed → Auto-hide Shorts controls**.
+### Shorts, with dedicated controls
+- The Shorts video viewport has a persistent right-side Like / Dislike / Comments / Share / More rail, creator/title metadata beside it, a red accessible seek strip, and its own mute control.
+- A flat navigation row sits below the video, not over it. The main app's floating pill, vignette, home-gesture guard and sideways tab gesture do not cover Shorts. Tap pauses/plays; vertical swipes page; horizontal movement on the seek strip scrubs.
 
 ### English by default, Arabic when you want it
 - The app ships in English and is fully mirrored in Arabic: **Settings → Language → العربية** flips every screen, header, sheet and dialog to right-to-left layout, with the same register and terminology the official YouTube app uses. Layout mirroring is real configuration-level RTL, not per-screen patching, and English stays the default. Arabic/English video metadata uses independent directional isolates, so a creator name cannot reorder adjacent view counts or dates.

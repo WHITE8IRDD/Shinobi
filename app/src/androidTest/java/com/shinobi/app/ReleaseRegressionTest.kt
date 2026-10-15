@@ -79,7 +79,8 @@ class ReleaseRegressionTest {
                 override fun onPlaybackStateChanged(state: Int) { ready.set(state == Player.STATE_READY) }
             })
             backend.setMediaItem(MediaItem.Builder().setMediaId(asset).setUri("asset:///$asset").build())
-            session = MediaSession.Builder(compose.activity, backend).build()
+            session = MediaSession.Builder(compose.activity, backend)
+                .setId("seek-regression-" + java.util.UUID.randomUUID()).build()
             future = MediaController.Builder(compose.activity, session.token).buildAsync()
         }
         val controller = future.get(10, TimeUnit.SECONDS)
