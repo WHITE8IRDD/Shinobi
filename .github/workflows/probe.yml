@@ -11,7 +11,7 @@ on:
         default: "MA"
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   probe:
@@ -25,7 +25,21 @@ jobs:
         with:
           python-version: "3.12"
 
-      # Which public route still carries a country's real trending list. The answer is
-      # printed as workflow annotations, which the Checks API can read.
+      # Which public route still carries a country's real trending list. The report is
+      # committed to the branch, so the whole answer is readable without a log download.
       - name: Probe the regional trending routes
-        run: python3 .github/scripts/probe_trending.py "${{ github.event.inputs.country || 'MA' }}"
+        run: |
+          python3 .github/scripts/probe_trending.py "${{ github.event.inputs.country || 'MA' }}" "docs/probes/trending-${{ github.event.inputs.country || 'MA' }}.md"
+
+      - name: Commit the probe report
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/probes
+          if git diff --cached --quiet; then
+            echo "The probe report is unchanged."
+            exit 0
+          fi
+          git commit -m "docs: regional trending probe [skip ci]"
+          git pull --rebase origin "${{ github.ref_name }}" || true
+          git push origin "HEAD:${{ github.ref_name }}"

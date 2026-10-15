@@ -6,17 +6,27 @@ Charts publishes, which does not include Morocco. This probe finds out, for the 
 asked for, which public route still carries the country's real trending list, so the app
 can use a route that actually works instead of the one that used to.
 
-Every result is printed as a workflow annotation, so it is readable from the Checks API.
+The result is written to a report file that the workflow commits to the branch, so the
+whole answer is readable without downloading a log.
 """
 import json
+import os
 import sys
 import urllib.error
 import urllib.request
 
 COUNTRY = sys.argv[1] if len(sys.argv) > 1 else "MA"
+OUT = sys.argv[2] if len(sys.argv) > 2 else "trending-probe.md"
 WEB_VERSION = "2.20260901.00.00"
 MWEB_VERSION = "2.20260901.01.00"
 API = "https://www.youtube.com/youtubei/v1/"
+
+lines = []
+
+
+def say(text):
+    lines.append(text)
+    print(text)
 
 
 def post(endpoint, query, client="WEB", number="1", version=WEB_VERSION):
@@ -44,8 +54,38 @@ def post(endpoint, query, client="WEB", number="1", version=WEB_VERSION):
         return json.load(response)
 
 
+def text_of(node):
+    if not isinstance(node, dict):
+        return ""
+    part = node.get("title") or node.get("headline")
+    if isinstance(part, dict):
+        return part.get("simpleText") or "".join(
+            run.get("text", "") for run in part.get("runs", []) or [])
+    return ""
+
+
+def describe(node):
+    if not isinstance(node, dict):
+        return None
+    video_id = node.get("videoId") or node.get("contentId") or ""
+    title = text_of(node)
+    views = ""
+    published = ""
+    for key in ("viewCountText", "shortViewCountText", "publishedTimeText"):
+        part = node.get(key)
+        if isinstance(part, dict):
+            value = part.get("simpleText") or "".join(
+                run.get("text", "") for run in part.get("runs", []) or [])
+            if key == "viewCountText" and value:
+                views = value
+            if key == "publishedTimeText" and value:
+                published = value
+    if not video_id or not title:
+        return None
+    return (video_id, title, views, published)
+
+
 def videos(root):
-    """(id, title, views, published) for every video renderer in the response."""
     out = []
 
     def walk(value):
@@ -65,97 +105,77 @@ def videos(root):
     return out
 
 
-def describe(node):
-    if not isinstance(node, dict):
-        return None
-    video_id = node.get("videoId") or node.get("contentId") or ""
-    title = ""
-    for key in ("title", "headline"):
-        part = node.get(key)
-        if isinstance(part, dict):
-            title = part.get("simpleText") or "".join(
-                run.get("text", "") for run in part.get("runs", []) or [])
-            if title:
-                break
-    views = ""
-    published = ""
-    for key in ("viewCountText", "shortViewCountText", "publishedTimeText"):
-        part = node.get(key)
-        if isinstance(part, dict):
-            text = part.get("simpleText") or "".join(
-                run.get("text", "") for run in part.get("runs", []) or [])
-            if key == "viewCountText" and text:
-                views = text
-            if key == "publishedTimeText" and text:
-                published = text
-    if not views:
-        metadata = node.get("metadata")
-        if isinstance(metadata, dict):
-            blob = json.dumps(metadata)
-            if "views" in blob:
-                views = "meta"
-    if not video_id or not title:
-        return None
-    return (video_id, title[:48], views, published)
-
-
 def report(label, function):
     try:
         root = function()
     except urllib.error.HTTPError as error:
-        print(f"::notice::TREND {label}: HTTP {error.code}")
+        say(f"- **{label}**: HTTP {error.code}")
         return None
     except Exception as error:  # noqa: BLE001 - a diagnostic reports every failure
-        print(f"::notice::TREND {label}: {type(error).__name__}: {error}")
+        say(f"- **{label}**: {type(error).__name__}: {error}")
         return None
     found = videos(root)
     if not found:
-        print(f"::notice::TREND {label}: 0 videos")
+        say(f"- **{label}**: 0 videos")
         return None
-    head = "; ".join(f"{item[1]} [{item[2]}|{item[3]}]" for item in found[:3])
-    print(f"::notice::TREND {label}: {len(found)} videos | {head}")
+    say(f"- **{label}**: {len(found)} videos")
+    for item in found[:5]:
+        say(f"    - `{item[0]}` {item[1][:60]} | views={item[2]!r} published={item[3]!r}")
     return found
 
 
-print(f"::notice::TREND probing country {COUNTRY}")
+say(f"# Regional trending probe — {COUNTRY}")
+say("")
+say("Which public route still carries this country's trending list.")
 
-# 1. The retired general Trending feed, with every category parameter YouTube ever used.
+say("")
+say("## Retired general Trending feed (browseId FEtrending)")
 for name, params in [
-    ("FEtrending/now", ""),
-    ("FEtrending/videos", "4gIOGgxtb3N0X3BvcHVsYXI%3D"),
-    ("FEtrending/charts-all", "4gINGgt5dG1hX2NoYXJ0cw%3D%3D"),
-    ("FEtrending/charts-music", "4gIuCggvbS8wNHJsZhIiU%3D%3D"),
-    ("FEtrending/charts-movies", "4gJ2eT5H2r1pXzXz"),
+    ("now", ""),
+    ("videos", "4gIOGgxtb3N0X3BvcHVsYXI%3D"),
+    ("charts-all", "4gINGgt5dG1hX2NoYXJ0cw%3D%3D"),
+    ("charts-music", "4gIuCggvbS8wNHJsZhIiU%3D%3D"),
 ]:
     query = {"browseId": "FEtrending"}
     if params:
         query["params"] = params
-    report(name, lambda query=query: post("browse", query))
-    report(name + "@mweb", lambda query=query: post("browse", query, "MWEB", "2", MWEB_VERSION))
+    report(f"WEB {name}", lambda query=query: post("browse", query))
+    report(f"MWEB {name}", lambda query=query: post("browse", query, "MWEB", "2", MWEB_VERSION))
 
-# 2. The other places YouTube still keeps charts.
+say("")
+say("## Other YouTube chart surfaces")
 report("podcasts", lambda: post("browse", {"browseId": "FEpodcasts_destination", "params": "qgcCCAM%3D"}))
 report("gaming", lambda: post("browse", {"browseId": "UCOpNcN46UbXVtpKMrmU4Abg", "params": "Egh0cmVuZGluZw%3D%3D"}))
 report("explore", lambda: post("browse", {"browseId": "FEexplore"}))
 report("home", lambda: post("browse", {"browseId": "FEwhat_to_watch"}))
+report("charts-home", lambda: post("browse", {"browseId": "FEmusic_analytics_charts_home", "query": "perspective=CHART_DETAILS&chart_params_country_code=" + COUNTRY + "&chart_params_chart_type=TRENDING_VIDEOS"}))
 
-# 3. Search filters: which one means "this week, most watched"? The response's own
-#    publishedTimeText and viewCountText say which.
+say("")
+say("## Search filters (which one means 'this week, most watched'?)")
 for name, params in [
-    ("relevance", ""),
-    ("upload-date", "CAI%3D"),
-    ("view-count", "EgQIBRAB"),
-    ("view-count-week", "CAMSAhAB"),
-    ("view-count-month", "CAISAhAB"),
-    ("week", "EgQIAhAB"),
-    ("year", "EgQIAxAB"),
+    ("plain", ""),
+    ("sort-upload-date", "CAI%3D"),
+    ("week", "EgQIBRAB"),
+    ("month", "CAMSAhAB"),
+    ("year", "CAISAhAB"),
+    ("today", "EgIIAQ%3D%3D"),
 ]:
-    query = {"query": "news"}
+    body = {"query": "news"}
     if params:
-        query["params"] = params
-    report("search/" + name, lambda query=query: post("search", query))
+        body["params"] = params
+    report(f"search/{name}", lambda body=body: post("search", body))
 
-# 4. The old HTML trending page and the legacy "most popular" feed, for reference.
+say("")
+say("## The route the app will use: most-watched of the last week, per topic")
+for query in ["news", "viral", "music", "football"]:
+    for name, params in [("view+week", "CAISAhAB"), ("view+month", "CAMSAhAB")]:
+        body = {"query": query}
+        if params:
+            body["params"] = params
+        report(f"search/{query}/{name}", lambda body=body: post("search", body))
+
+say("")
+say("## The old HTML routes, for reference")
 for label, url in [
     ("html/feed-trending", "https://www.youtube.com/feed/trending?gl=" + COUNTRY),
     ("feeds/most-popular", "https://www.youtube.com/feeds/videos.xml?chart=mostPopular&gl=" + COUNTRY),
@@ -164,22 +184,14 @@ for label, url in [
         request = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
         with urllib.request.urlopen(request, timeout=12) as response:
             body = response.read(400000).decode("utf-8", "replace")
-        found = videos(json.loads(body)) if body.strip().startswith("{") else []
-        print(f"::notice::TREND {label}: HTTP 200, {len(found)} videos, "
-              f"length={len(body)}, trending_title={'Trending' in body}")
+        say(f"- **{label}**: HTTP 200, {len(body)} bytes, "
+            f"has-Trending-title={'Trending' in body}")
     except urllib.error.HTTPError as error:
-        print(f"::notice::TREND {label}: HTTP {error.code}")
+        say(f"- **{label}**: HTTP {error.code}")
     except Exception as error:  # noqa: BLE001
-        print(f"::notice::TREND {label}: {type(error).__name__}: {error}")
+        say(f"- **{label}**: {type(error).__name__}: {error}")
 
-# 5. The route the app will actually use: a country's most-watched videos of the last week,
-#    found through the search filters YouTube itself offers. Several topical queries are
-#    merged, so the list holds news, current events, music and viral clips, not one topic.
-for query in ["news", "viral", "music"]:
-    for name, params in [("view+week", "CAISAhAB"), ("view+month", "CAMSAhAB"), ("plain", "")]:
-        body = {"query": query}
-        if params:
-            body["params"] = params
-        report(f"search/{query}/{name}", lambda body=body: post("search", body))
-
+os.makedirs(os.path.dirname(OUT) or ".", exist_ok=True)
+with open(OUT, "w", encoding="utf-8") as handle:
+    handle.write("\n".join(lines) + "\n")
 print("Diagnostic only. Shared runner IPs and device networks can receive different responses.")
