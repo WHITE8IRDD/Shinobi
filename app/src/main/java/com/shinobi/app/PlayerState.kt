@@ -284,7 +284,7 @@ class PlayerState(
                     if (!aspectFromFrames) d.aspect?.let { videoAspect = it }
                     // Comments wait for the stream data: their request duplicates the video
                     // page fetch and only slowed down the critical path.
-                    comments.load(item.id)
+                    if (!inShortsMode) comments.load(item.id)
                     known[item.id] = current!!
                     if (!d.playable) error = Loc.t("No playable stream was found for this video.")
                     else if (startPlayback) startPlayback(current!!)
@@ -300,7 +300,7 @@ class PlayerState(
                     Log.w(TAG, "details failed for ${item.id}", it)
                     error = YouTube.friendlyError(it)
                     // Comments wait for details; without this their spinner never stopped.
-                    comments.load(item.id)
+                    if (!inShortsMode) comments.load(item.id)
                 }
             loading = false
         }

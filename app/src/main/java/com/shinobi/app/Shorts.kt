@@ -580,7 +580,10 @@ fun ShortsScreen(
                         bottomInset = bottomInset,
                         onOpenComments = {
                             view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
-                            if (isActivePage) commentsOpenFor = item.id
+                            if (isActivePage) {
+                                player.comments.ensureLoaded(item.id)
+                                commentsOpenFor = item.id
+                            }
                         },
                         onShare = {
                             val send = Intent(Intent.ACTION_SEND).setType("text/plain")

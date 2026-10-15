@@ -15,4 +15,4 @@ dependencyResolutionManagement {
     }
 }
 rootProject.name = "Shinobi"
-include(":app")
+include(":app", ":benchmark")

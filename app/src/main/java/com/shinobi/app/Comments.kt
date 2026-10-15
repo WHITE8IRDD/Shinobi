@@ -97,10 +97,14 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.ensureActive
 
 /** Comments for the open video: first page, paging, per-comment replies, likes and posting. */
 @Stable
-class CommentsState(private val scope: CoroutineScope) {
+class CommentsState(
+    private val scope: CoroutineScope,
+    private val firstPage: suspend (String) -> CommentsPage = CommentFeed::first,
+) {
     private var videoId: String? = null
     var comments by mutableStateOf<List<Comment>>(emptyList())
         private set
@@ -133,18 +137,26 @@ class CommentsState(private val scope: CoroutineScope) {
     val repliesLoading = mutableStateMapOf<String, Boolean>()
 
     private var job: Job? = null
+    private var requested = false
 
     /** A new video opened: drop the old comments now; [load] follows once its data is in. */
     fun clearFor(id: String) {
         job?.cancel()
         videoId = id
+        requested = false
+        liked.clear()
         comments = emptyList(); total = -1; disabled = false; error = null; next = null
         replies.clear(); repliesLoading.clear(); replyingTo = null; draft = ""; postError = null
         loading = true
     }
 
+    /** Opening a Shorts panel twice must not refetch the same first page. Explicit Retry
+     * still calls load(), while a different Short always starts a fresh request. */
+    fun ensureLoaded(id: String) { if (videoId != id || !requested) load(id) }
+
     fun load(id: String) {
         videoId = id
+        requested = true
         replyingTo = null
         draft = ""
         postError = null
@@ -159,8 +171,9 @@ class CommentsState(private val scope: CoroutineScope) {
         loading = true
         job?.cancel()
         job = scope.launch {
-            runCatching { CommentFeed.first(id) }
+            runCatching { firstPage(id) }
                 .onSuccess { page ->
+                    kotlinx.coroutines.currentCoroutineContext().ensureActive()
                     if (videoId != id) return@onSuccess
                     comments = page.comments
                     total = page.total
@@ -168,8 +181,11 @@ class CommentsState(private val scope: CoroutineScope) {
                     next = page.next
                     arrived(page.comments)
                 }
-                .onFailure { if (videoId == id) error = YouTube.friendlyError(it) }
-            loading = false
+                .onFailure {
+                    if (it is kotlinx.coroutines.CancellationException) throw it
+                    if (videoId == id) error = YouTube.friendlyError(it)
+                }
+            if (videoId == id) loading = false
         }
     }
 

@@ -32,6 +32,14 @@ android {
         }
     }
 
+    buildTypes.create("benchmark") {
+        initWith(buildTypes.getByName("release"))
+        signingConfig = signingConfigs.getByName("debug")
+        matchingFallbacks += listOf("release")
+        isDebuggable = false
+    }
+    sourceSets.getByName("benchmark").assets.srcDir("src/debug/assets")
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
