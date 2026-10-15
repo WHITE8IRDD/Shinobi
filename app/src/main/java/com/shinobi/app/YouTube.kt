@@ -158,8 +158,10 @@ object YouTube {
      * NewPipe take), with the country forced on the request so the chart is the regional one.
      */
     suspend fun trending(country: String, category: TrendingCategory): List<VideoItem> = withContext(Dispatchers.IO) {
-        val kiosks = service.kioskList.apply { forceContentCountry(ContentCountry(country)) }
-        val extractor = kiosks.getExtractorById(category.kioskId, null)
+        if (category == TrendingCategory.General) return@withContext InnerTube.regionalTrending(country)
+        val extractor = service.kioskList.getExtractorById(category.kioskId, null)
+        // Request-local country: never mutate a shared service/kiosk while another region loads.
+        extractor.forceContentCountry(ContentCountry(country))
         extractor.fetchPage()
         val info = KioskInfo.getInfo(extractor)
         val items = info.relatedItems.filterIsInstance<StreamInfoItem>().mapNotNull { it.toVideoItem() }
@@ -383,11 +385,25 @@ object StreamCache {
     }
 
     /** Background warm-up; one at a time so prefetches never crowd a real open. */
-    private val prefetcher = Executors.newSingleThreadExecutor()
+    private val pendingPrefetch = ConcurrentHashMap.newKeySet<String>()
+    private val prefetcher = java.util.concurrent.ThreadPoolExecutor(
+        1, 1, 30, java.util.concurrent.TimeUnit.SECONDS,
+        java.util.concurrent.ArrayBlockingQueue(2),
+        { task -> Thread(task, "shinobi-prefetch").apply { isDaemon = true; priority = Thread.MIN_PRIORITY } },
+        java.util.concurrent.ThreadPoolExecutor.AbortPolicy(),
+    ).apply { allowCoreThreadTimeOut(true) }
 
     fun prefetch(id: String) {
-        if (get(id) != null || inflight.containsKey(id)) return
-        prefetcher.execute { runCatching { getOrLoad(id) } }
+        if (get(id) != null || inflight.containsKey(id) || !pendingPrefetch.add(id)) return
+        try {
+            prefetcher.execute {
+                try { if (get(id) == null) getOrLoad(id) }
+                catch (_: Exception) { /* Speculation is optional; a real open reports errors. */ }
+                finally { pendingPrefetch.remove(id) }
+            }
+        } catch (_: java.util.concurrent.RejectedExecutionException) {
+            pendingPrefetch.remove(id) // Never queue a whole feed or run extraction on the caller.
+        }
     }
 }
 

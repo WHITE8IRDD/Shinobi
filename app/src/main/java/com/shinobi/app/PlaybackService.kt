@@ -92,7 +92,9 @@ class PlaybackService : MediaSessionService() {
             // halves what must download before the first frame.
             .setLoadControl(
                 DefaultLoadControl.Builder()
-                    .setBufferDurationsMs(15_000, 50_000, 1_000, 2_000)
+                    .setBufferDurationsMs(15_000, if (DeviceRam.lowRam) 30_000 else 50_000, 1_000, 2_000)
+                    .setTargetBufferBytes(if (DeviceRam.lowRam) 24 * 1024 * 1024 else 48 * 1024 * 1024)
+                    .setPrioritizeTimeOverSizeThresholds(false)
                     .build(),
             )
             // Until the connection has been measured, assume a modest one: the first chunk
@@ -143,7 +145,7 @@ class PlaybackService : MediaSessionService() {
         watchTime = WatchTimeReporter(player).also(player::addListener)
         session = MediaSession.Builder(this, player)
             .setSessionActivity(openApp)
-            .setCallback(SessionCallback())
+            .setCallback(SessionCallback(sources))
             .build()
         // The notification's status-bar icon and channel name are Shinobi's, not the library
         // defaults. The emblem is a flat white stencil, so the system tints it to whatever the
@@ -183,7 +185,7 @@ class PlaybackService : MediaSessionService() {
      * controller boundary). Each one is resolved here into a playable item; the actual
      * streams come from [StreamCache] in [YouTubeMediaSourceFactory].
      */
-    private inner class SessionCallback : MediaSession.Callback {
+    private inner class SessionCallback(private val sources: YouTubeMediaSourceFactory) : MediaSession.Callback {
         override fun onAddMediaItems(
             mediaSession: MediaSession,
             controller: MediaSession.ControllerInfo,
@@ -191,7 +193,7 @@ class PlaybackService : MediaSessionService() {
         ): ListenableFuture<MutableList<MediaItem>> = resolver.submit<MutableList<MediaItem>> {
             mediaItems.map { item ->
                 val info = StreamCache.getOrLoad(item.mediaId)
-                item.buildUpon()
+                val resolved = item.buildUpon()
                     .setUri(YouTube.watchUrl(item.mediaId))
                     .setMediaMetadata(
                         item.mediaMetadata.buildUpon()
@@ -201,6 +203,9 @@ class PlaybackService : MediaSessionService() {
                             .build(),
                     )
                     .build()
+                // Manifest generation / XML parsing and codec selection belong on the
+                // resolver, not the session's UI looper. A source is unique to this item.
+                sources.resolve(resolved)
             }.toMutableList()
         }
     }
@@ -250,13 +255,16 @@ private class StreamRecoverer(
         StreamRecovery.recovering = id
         StreamCache.invalidate(id)
         resolver.execute {
-            val result = runCatching { StreamCache.getOrLoad(id) }
+            val result = runCatching {
+                StreamCache.getOrLoad(id)
+                (sources as? YouTubeMediaSourceFactory)?.resolve(item) ?: item
+            }
             main.post {
                 StreamRecovery.recovering = null
                 // The user moved on (another video, Try again) while the links loaded.
                 if (player.currentMediaItem?.mediaId != id || player.playerError == null) return@post
                 result
-                    .onSuccess { resume(item, position) }
+                    .onSuccess { resolved -> resume(resolved, position) }
                     .onFailure {
                         Log.w("Shinobi", "re-extracting $id failed", it)
                         StreamRecovery.failed = id to YouTube.friendlyError(it)
@@ -512,11 +520,12 @@ private class SponsorSkipper(private val player: ExoPlayer) : Player.Listener {
         Log.i("Shinobi", "SponsorBlock: skipping ${segment.category.key} ${segment.startMs}-$spanEnd in $videoId")
         // Jump first, fade in after: the segment is gone from the very first frame it is
         // detected in, and the audio dip hides the seam.
+        val volumeBeforeSkip = player.volume
         player.volume = 0f
         player.seekTo(spanEnd)
         SponsorBlock.lastSkip = SponsorBlock.Skip(videoId, segment.copy(endMs = spanEnd))
         lastPositionMs = spanEnd
-        ramp(to = 1f, durationMs = 250)
+        ramp(to = volumeBeforeSkip, durationMs = 250)
     }
 
     /** Fades the player's volume to [to] from wherever it is now. */
@@ -565,7 +574,14 @@ private class YouTubeMediaSourceFactory(context: Context) : MediaSource.Factory 
 
     override fun getSupportedTypes(): IntArray = fallback.supportedTypes
 
-    override fun createMediaSource(mediaItem: MediaItem): MediaSource {
+    /** Called on the service resolver. Tags are local to the service and never serialized. */
+    fun resolve(mediaItem: MediaItem): MediaItem = mediaItem.buildUpon()
+        .setTag(buildSource(mediaItem)).build()
+
+    override fun createMediaSource(mediaItem: MediaItem): MediaSource =
+        mediaItem.localConfiguration?.tag as? MediaSource ?: buildSource(mediaItem)
+
+    private fun buildSource(mediaItem: MediaItem): MediaSource {
         val info = StreamCache.get(mediaItem.mediaId) ?: return fallback.createMediaSource(mediaItem)
         val picked = StreamSelection.pick(info)
         // Auto: every quality as one adaptive set. A chosen quality stays pinned below.

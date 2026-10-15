@@ -36,7 +36,10 @@ import kotlinx.coroutines.launch
  * screens render, as snapshot state so only readers recompose.
  */
 @Stable
-class PlayerState(private val scope: CoroutineScope) {
+class PlayerState(
+    private val scope: CoroutineScope,
+    private val detailsLoader: suspend (String) -> VideoDetails = YouTube::details,
+) {
     var controller by mutableStateOf<MediaController?>(null)
         internal set
 
@@ -269,7 +272,7 @@ class PlayerState(private val scope: CoroutineScope) {
         }
         loadJob?.cancel()
         loadJob = scope.launch {
-            runCatching { YouTube.details(item.id) }
+            runCatching { detailsLoader(item.id) }
                 .onSuccess { d ->
                     Log.i("ShinobiTime", "details +${android.os.SystemClock.elapsedRealtime() - openedAt}ms")
                     details = d
@@ -647,9 +650,24 @@ class PlayerState(private val scope: CoroutineScope) {
 
     fun seekTo(ms: Long) {
         val player = controller ?: return
-        val max = player.duration.takeIf { it > 0 } ?: Long.MAX_VALUE
-        player.seekTo(ms.coerceIn(0L, max))
-        positionMs = player.currentPosition
+        // A detached controller, old Short's duration or a live/unseekable timeline is not
+        // a valid seek target. Never seek the previous item while the new one is loading.
+        if (!player.isConnected || player.currentMediaItem?.mediaId != current?.id ||
+            !player.isCommandAvailable(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM) ||
+            !player.isCurrentMediaItemSeekable) return
+        val duration = player.duration.takeIf { it > 0 } ?: return
+        player.seekTo(ms.coerceIn(0L, duration))
+        positionMs = player.currentPosition.coerceAtLeast(0L)
+    }
+
+    var muted by mutableStateOf(false)
+        private set
+
+    fun toggleMute() {
+        val p = controller ?: return
+        if (!p.isCommandAvailable(Player.COMMAND_SET_VOLUME)) return
+        muted = !muted
+        p.volume = if (muted) 0f else 1f
     }
 
     /** The ruler is moving: play at [value] now (remembering waits for [commitSpeed]). */
@@ -766,7 +784,7 @@ class PlayerState(private val scope: CoroutineScope) {
         current = item
         LocalHistory.record(item)
         loadJob = scope.launch {
-            runCatching { YouTube.details(item.id) }.onSuccess {
+            runCatching { detailsLoader(item.id) }.onSuccess {
                 details = it
                 current = it.item
                 applyPreferredCaption(it.captions)

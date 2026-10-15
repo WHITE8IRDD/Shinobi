@@ -285,6 +285,24 @@ object InnerTube {
         parseFeed(readPost("browse", body, anonymous = false, publicRead = false))
     }
 
+    /** NewPipe's original regional Trending route. No cookies, ranking or category fallback.
+     * The retired route currently returns 400. Treat that as unavailable, not as Gaming. */
+    suspend fun regionalTrending(country: String): List<VideoItem> = withContext(Dispatchers.IO) {
+        try {
+            val root = readPost("browse", JSONObject().put("browseId", "FEtrending")
+                .put("params", "4gIOGgxtb3N0X3BvcHVsYXI%3D"), anonymous = true, country = country)
+            val tabs = root.optJSONObject("contents")?.optJSONObject("twoColumnBrowseResultsRenderer")
+                ?.optJSONArray("tabs") ?: return@withContext emptyList()
+            val selected = (0 until tabs.length()).mapNotNull { tabs.optJSONObject(it)?.optJSONObject("tabRenderer") }
+                .firstOrNull { it.optBoolean("selected") }?.optJSONObject("content")
+                ?: return@withContext emptyList()
+            parseFeed(selected).videos
+        } catch (e: HttpFailure) {
+            if (e.status == 400 || e.status == 404) throw GeneralTrendingUnavailable()
+            throw e
+        }
+    }
+
     suspend fun home(next: String? = null) = browse("FEwhat_to_watch", next)
 
     /** Prefer YouTube Home. Anonymous Home may legitimately be empty without watch cookies.

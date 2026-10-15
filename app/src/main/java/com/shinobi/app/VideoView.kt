@@ -254,11 +254,7 @@ fun VideoContent(
         SkippedNote(state, Modifier.align(Alignment.TopCenter).padding(top = 12.dp).graphicsLayer { alpha = controlsAlpha() })
         // The Ask pill stays reachable while the controls are hidden.
         if (!controlsVisible) {
-            state.askSegment?.let { segment ->
-                SkipSegmentPill(segment, enabled = true, modifier = Modifier.align(Alignment.BottomEnd).padding(12.dp)) {
-                    touched(); state.skipSegment(segment)
-                }
-            }
+            AskSegmentControl(state, Modifier.align(Alignment.BottomEnd).padding(12.dp), ::touched)
         }
         Box(Modifier.fillMaxSize().graphicsLayer { alpha = visibleAlpha * controlsAlpha() }) {
             Box(
@@ -344,11 +340,14 @@ fun VideoContent(
                         touched(); state.seekBy(10_000)
                     }
                 }
+                // Preview is an overlay, not an inserted row: the seek target must not move
+                // under the finger when a drag starts (especially in short landscape windows).
+                val previewPosition = scrubPreview
+                if (fullscreen && previewPosition != null) {
+                    SeekThumbnail(state.details?.storyboard, state.current?.thumbnail, previewPosition,
+                        Modifier.align(Alignment.BottomCenter).padding(bottom = 100.dp))
+                }
                 Column(Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(start = 14.dp, end = 8.dp, bottom = 6.dp)) {
-                    if (fullscreen && scrubPreview != null) {
-                        SeekThumbnail(state.details?.storyboard, state.current?.thumbnail, scrubPreview!!,
-                            Modifier.align(Alignment.CenterHorizontally).padding(bottom = 8.dp))
-                    }
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         ElapsedText(state, scrubPreview, Color.White, 12.sp, FontWeight.Bold)
                         Text(
@@ -356,10 +355,7 @@ fun VideoContent(
                             color = Color.White.copy(alpha = 0.72f), fontSize = 12.sp, fontWeight = FontWeight.Bold,
                             modifier = Modifier.weight(1f),
                         )
-                        state.askSegment?.let { segment ->
-                            SkipSegmentPill(segment, enabled = true) { touched(); state.skipSegment(segment) }
-                            Spacer(Modifier.width(6.dp))
-                        }
+                        AskSegmentControl(state, Modifier.padding(end = 6.dp), ::touched)
                         if (state.captionTracks.isNotEmpty()) {
                             GlassButton(
                                 Icons.Rounded.Subtitles,
@@ -839,6 +835,9 @@ internal fun Scrubber(
     onCancel: () -> Unit = {},
 ) {
     var dragFraction by remember { mutableStateOf<Float?>(null) }
+    val previewHandler by androidx.compose.runtime.rememberUpdatedState(onPreview)
+    val seekHandler by androidx.compose.runtime.rememberUpdatedState(onSeek)
+    val cancelHandler by androidx.compose.runtime.rememberUpdatedState(onCancel)
     val duration = durationMs.coerceAtLeast(1L)
     val playedFraction = dragFraction ?: (positionMs.toFloat() / duration).coerceIn(0f, 1f)
     val bufferedFraction = (bufferedMs.toFloat() / duration).coerceIn(0f, 1f)
@@ -855,24 +854,24 @@ internal fun Scrubber(
                 .fillMaxSize()
                 .pointerInput(enabled, durationMs) {
                     if (!enabled || durationMs <= 0) return@pointerInput
-                    detectTapGestures { offset -> onSeek((offset.x / size.width * durationMs).toLong()) }
+                    detectTapGestures { offset -> seekHandler(seekPosition(offset.x, size.width, durationMs)) }
                 }
                 .pointerInput(enabled, durationMs) {
                     if (!enabled || durationMs <= 0) return@pointerInput
                     detectHorizontalDragGestures(
                         onDragStart = { offset ->
                             dragFraction = (offset.x / size.width).coerceIn(0f, 1f)
-                            onPreview((dragFraction!! * durationMs).toLong())
+                            previewHandler((dragFraction!! * durationMs).toLong())
                         },
                         onDragEnd = {
-                            dragFraction?.let { onSeek((it * durationMs).toLong()) }
+                            dragFraction?.let { seekHandler((it * durationMs).toLong()) }
                             dragFraction = null
                         },
-                        onDragCancel = { dragFraction = null; onCancel() },
+                        onDragCancel = { dragFraction = null; cancelHandler() },
                     ) { change, _ ->
                         change.consume()
                         dragFraction = (change.position.x / size.width).coerceIn(0f, 1f)
-                        onPreview((dragFraction!! * durationMs).toLong())
+                        previewHandler((dragFraction!! * durationMs).toLong())
                     }
                 },
         ) {
@@ -977,8 +976,13 @@ private fun PlayerScrubber(
     touchHeight: Dp = 24.dp,
     onCancel: () -> Unit = {},
 ) {
+    androidx.compose.runtime.key(state.current?.id) {
+    val segments = state.segments
+    val visibleSegments = remember(segments, SponsorBlock.enabled) {
+        if (SponsorBlock.enabled) segments.filter { it.action != SponsorBlock.Action.Off } else emptyList()
+    }
     Scrubber(
-        segments = if (SponsorBlock.enabled) state.segments.filter { it.action != SponsorBlock.Action.Off } else emptyList(),
+        segments = visibleSegments,
         positionMs = state.positionMs,
         bufferedMs = state.bufferedMs,
         durationMs = state.durationMs,
@@ -994,4 +998,13 @@ private fun PlayerScrubber(
         touchHeight = touchHeight,
         onCancel = onCancel,
     )
+    }
+}
+
+/** Only this leaf observes position for the Ask pill; the video/control tree stays still. */
+@Composable
+private fun AskSegmentControl(state: PlayerState, modifier: Modifier, onTouch: () -> Unit) {
+    state.askSegment?.let { segment ->
+        SkipSegmentPill(segment, true, modifier) { onTouch(); state.skipSegment(segment) }
+    }
 }

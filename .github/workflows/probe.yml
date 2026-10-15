@@ -1,8 +1,6 @@
 name: Probe
 
 on:
-  push:
-    branches: [main, "arena/**"]
   workflow_dispatch:
     inputs:
       country:
@@ -15,6 +13,7 @@ permissions:
 
 jobs:
   probe:
+    if: github.ref == 'refs/heads/arena/17aa39de-shinobi'
     runs-on: ubuntu-latest
     steps:
       - name: Check out source
@@ -41,5 +40,5 @@ jobs:
             exit 0
           fi
           git commit -m "docs: regional trending probe [skip ci]"
-          git pull --rebase origin "${{ github.ref_name }}" || true
-          git push origin "HEAD:${{ github.ref_name }}"
+          git pull --rebase origin arena/17aa39de-shinobi
+          git push origin arena/17aa39de-shinobi

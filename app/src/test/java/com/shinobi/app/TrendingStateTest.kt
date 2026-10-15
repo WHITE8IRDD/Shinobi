@@ -25,10 +25,10 @@ class TrendingStateTest {
         state.load("MA"); advanceUntilIdle()
         state.load("US"); advanceUntilIdle()
         state.load("MA"); advanceUntilIdle()
-        assertEquals(listOf("MA/Gaming", "US/Music"), calls)
+        assertEquals(listOf("MA/General", "US/General"), calls)
         assertEquals("MA", state.videos.single().id)
         state.load("MA", refresh = true); advanceUntilIdle()
-        assertEquals(listOf("MA/Gaming", "US/Music", "MA/Gaming"), calls)
+        assertEquals(listOf("MA/General", "US/General", "MA/General"), calls)
         state.select("MA", TrendingCategory.Podcasts); advanceUntilIdle()
         assertEquals("MA/Podcasts", calls.last())
     }
@@ -42,19 +42,19 @@ class TrendingStateTest {
         assertFalse(state.loading)
     }
 
-    @Test fun chartsOnlyCategoriesFallBackWhereYouTubeChartsHasNoCountry() = runTest {
+    @Test fun allIsDefaultEvenWhereCategoryChartsAreUnavailable() = runTest {
         val state = TrendingState(this) { country, category -> chart("$country/${category.name}") }
-        // Music is the default where YouTube Charts covers the country, Gaming elsewhere.
-        assertEquals(TrendingCategory.Music, state.categoryFor("US"))
-        assertEquals(TrendingCategory.Gaming, state.categoryFor("MA"))
-        assertEquals(listOf(TrendingCategory.Gaming, TrendingCategory.Podcasts), TrendingCategory.availableIn("MA"))
+        // Never silently replace All with a narrower category, in any country.
+        assertEquals(TrendingCategory.General, state.categoryFor("US"))
+        assertEquals(TrendingCategory.General, state.categoryFor("MA"))
+        assertEquals(listOf(TrendingCategory.General, TrendingCategory.Gaming, TrendingCategory.Podcasts), TrendingCategory.availableIn("MA"))
         assertEquals(TrendingCategory.entries, TrendingCategory.availableIn("FR"))
         // A pick the country can't have is ignored; one it can is kept across countries that have it.
         state.select("MA", TrendingCategory.Movies); advanceUntilIdle()
         assertTrue(state.videos.isEmpty())
         state.select("US", TrendingCategory.Movies); advanceUntilIdle()
         assertEquals("US/Movies", state.videos.single().id)
-        assertEquals(TrendingCategory.Gaming, state.categoryFor("MA"))
+        assertEquals(TrendingCategory.General, state.categoryFor("MA"))
         assertEquals(TrendingCategory.Movies, state.categoryFor("GB"))
     }
 }

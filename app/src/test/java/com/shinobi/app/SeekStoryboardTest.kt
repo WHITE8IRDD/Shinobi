@@ -20,6 +20,8 @@ class SeekStoryboardTest {
     }
 
     @Test fun invalidOrUnavailableBoardsFallBackSafely() {
+        assertNull(board.copy(width = Int.MAX_VALUE).frameAt(0))
+        assertNull(board.copy(rows = Int.MAX_VALUE).frameAt(0))
         assertNull(board.copy(intervalMs = 0).frameAt(0))
         assertNull(board.copy(columns = 0).frameAt(0))
         assertNull(board.copy(urls = emptyList()).frameAt(0))

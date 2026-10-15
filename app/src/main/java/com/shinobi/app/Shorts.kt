@@ -36,6 +36,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.absolutePadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -60,6 +61,9 @@ import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Share
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.VolumeOff
+import androidx.compose.material.icons.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.ThumbDown
 import androidx.compose.material.icons.rounded.ThumbUp
 import androidx.compose.material.icons.rounded.WatchLater
@@ -80,6 +84,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.AbsoluteAlignment
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
@@ -477,6 +483,7 @@ fun ShortsScreen(
     bottomInset: Dp,
     showSurface: Boolean,
     onSearch: () -> Unit,
+    onBack: () -> Unit = {},
 ) {
     val c = MaterialTheme.colorScheme
     val view = LocalView.current
@@ -522,29 +529,11 @@ fun ShortsScreen(
         }
     }
 
-    // ── Focus mode ────────────────────────────────────────────────────────────
-    // While a Short plays, every control fades away and the video has the whole screen. A tap
-    // brings the controls back (and pauses, as a tap does anywhere else in Shorts). Landing on
-    // a new Short, or coming back to the tab, always starts with the controls on screen.
-    SideEffect { focus.engaged = showSurface }
-    LaunchedEffect(currentShort?.id, showSurface) { if (showSurface) focus.chromeVisible = true }
-    LaunchedEffect(focus.chromeVisible, player.isPlaying, AppSettings.shortsAutoHide, commentsOpenFor) {
-        if (AppSettings.shortsAutoHide && focus.chromeVisible && player.isPlaying && commentsOpenFor == null) {
-            delay(2_600)
-            focus.chromeVisible = false
-        }
-    }
-    DisposableEffect(Unit) {
-        onDispose {
-            focus.chromeVisible = true
-            focus.engaged = false
-        }
-    }
-
-    val tasteTopics = remember(LocalHistory.tasteKey) {
-        TasteEngine.buildTasteSeeds(LocalHistory.entries, LocalHistory.recentQueries).topicPills.take(5)
-    }
-    val chrome = focus.chromeVisible
+    // Shorts owns its chrome. Never fade in the main app's floating navigation over
+    // a Short; the shell reserves a separate bottom navigation row outside this viewport.
+    SideEffect { focus.engaged = showSurface; focus.chromeVisible = true }
+    DisposableEffect(Unit) { onDispose { focus.engaged = false } }
+    val chrome = true
 
     Box(
         Modifier
@@ -575,7 +564,7 @@ fun ShortsScreen(
             shorts.isNotEmpty() -> {
                 VerticalPager(
                     state = pagerState,
-                    beyondViewportPageCount = 1,
+                    beyondViewportPageCount = 0,
                     key = { index -> shorts.getOrNull(index)?.id ?: index },
                     modifier = Modifier.fillMaxSize().clipToBounds(),
                 ) { page ->
@@ -589,7 +578,7 @@ fun ShortsScreen(
                         bottomInset = bottomInset,
                         onOpenComments = {
                             view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
-                            commentsOpenFor = item.id
+                            if (isActivePage) commentsOpenFor = item.id
                         },
                         onShare = {
                             val send = Intent(Intent.ACTION_SEND).setType("text/plain")
@@ -603,77 +592,17 @@ fun ShortsScreen(
             }
         }
 
-        // Top overlay: Shorts header + topic filter chips + Search button. It leaves with the
-        // rest of the chrome, so nothing of the app sits over the video in focus mode.
-        AnimatedVisibility(
-            visible = chrome,
-            enter = fadeIn(tween(180)) + slideInVertically(tween(220)) { -it / 5 },
-            exit = fadeOut(tween(150)) + slideOutVertically(tween(180)) { -it / 5 },
-            modifier = Modifier.align(Alignment.TopCenter),
+        Row(
+            Modifier.align(Alignment.TopCenter).fillMaxWidth().statusBarsPadding()
+                .padding(horizontal = 8.dp, vertical = 4.dp).testTag("shorts-header"),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(
-                        Brush.verticalGradient(
-                            0f to Color.Black.copy(alpha = 0.68f),
-                            0.7f to Color.Black.copy(alpha = 0.25f),
-                            1f to Color.Transparent,
-                        ),
-                    )
-                    .statusBarsPadding()
-                    .padding(top = 10.dp, bottom = 14.dp),
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    ShortsBadgeIcon(size = 28.dp)
-                    Spacer(Modifier.width(10.dp))
-                    Text(
-                        Loc.t("Shorts"),
-                        color = Color.White,
-                        fontFamily = RoundedHeavy,
-                        fontWeight = FontWeight.ExtraBold,
-                        fontSize = 24.sp,
-                        letterSpacing = (-0.7).sp,
-                        modifier = Modifier.weight(1f),
-                    )
-                    Box(
-                        modifier = Modifier
-                            .size(40.dp)
-                            .pressable(onClick = onSearch)
-                            .clip(CircleShape)
-                            .background(Color.White.copy(alpha = 0.16f)),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(Icons.Rounded.Search, Loc.t("Search"), tint = Color.White, modifier = Modifier.size(21.dp))
-                    }
-                }
-                if (tasteTopics.isNotEmpty()) {
-                    Spacer(Modifier.height(10.dp))
-                    Row(
-                        modifier = Modifier
-                            .horizontalScroll(rememberScrollState())
-                            .padding(horizontal = 16.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        ShortsTopicChip(
-                            label = Loc.t("For you"),
-                            selected = state.selectedTopic == null,
-                            icon = Icons.Rounded.AutoAwesome,
-                            onClick = { state.selectTopic(null) },
-                        )
-                        tasteTopics.forEach { topic ->
-                            ShortsTopicChip(
-                                label = topic,
-                                selected = state.selectedTopic.equals(topic, ignoreCase = true),
-                                onClick = { state.selectTopic(topic) },
-                            )
-                        }
-                    }
-                }
-            }
+            ShortsHeaderButton(Icons.AutoMirrored.Rounded.ArrowBack, Loc.t("Back"), onBack)
+            Text(Loc.t("Shorts"), color = Color.White, fontWeight = FontWeight.Bold,
+                fontSize = 20.sp, modifier = Modifier.weight(1f))
+            ShortsHeaderButton(if (player.muted) Icons.Rounded.VolumeOff else Icons.Rounded.VolumeUp,
+                Loc.t(if (player.muted) "Unmute" else "Mute"), player::toggleMute)
+            ShortsHeaderButton(Icons.Rounded.Search, Loc.t("Search"), onSearch)
         }
 
         // Comments panel over the active Short
@@ -835,11 +764,6 @@ internal fun ShortPageContent(
     } else {
         LocalHistory.likeStatus(item.id)
     }
-    val isSaved = if (isActivePage && player.current?.id == item.id) {
-        player.inWatchLater
-    } else {
-        LocalHistory.isInWatchLater(item.id)
-    }
     val isSubscribed = if (isActivePage && player.current?.id == item.id) {
         player.effectiveSubscribed
     } else {
@@ -974,13 +898,13 @@ internal fun ShortPageContent(
             visible = chromeVisible || !isActivePage,
             enter = fadeIn(tween(180)) + scaleIn(initialScale = 0.94f),
             exit = fadeOut(tween(140)) + scaleOut(targetScale = 0.94f),
-            modifier = Modifier.align(Alignment.BottomEnd),
+            modifier = Modifier.align(AbsoluteAlignment.BottomRight).testTag("shorts-action-rail"),
         ) {
         Column(
             modifier = Modifier
-                .padding(end = 12.dp, bottom = bottomInset + 26.dp),
+                .absolutePadding(right = 8.dp, bottom = bottomInset + 48.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             val likesCount = if (isActivePage && player.current?.id == item.id) player.displayLikes else -1L
             ShortActionItem(
@@ -1005,28 +929,13 @@ internal fun ShortPageContent(
                 onClick = onOpenComments,
             )
             ShortActionItem(
-                icon = if (isSaved) Icons.Rounded.WatchLater else Icons.Outlined.WatchLater,
-                label = if (isSaved) Loc.t("Saved") else Loc.t("Save"),
-                active = isSaved,
-                flourish = Flourish.Drop,
-                onClick = { if (isActivePage) player.toggleWatchLater() },
-            )
-            ShortActionItem(
                 icon = Icons.Rounded.Share,
                 label = Loc.t("Share"),
                 active = false,
                 onClick = onShare,
             )
-            Box(
-                modifier = Modifier
-                    .size(42.dp)
-                    .pressable { menu(resolvedItem) }
-                    .clip(CircleShape)
-                    .background(Color.Black.copy(alpha = 0.42f)),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(Icons.Rounded.MoreVert, Loc.t("More options"), tint = Color.White, modifier = Modifier.size(20.dp))
-            }
+            ShortActionItem(Icons.Rounded.MoreVert, Loc.t("More options"), false,
+                onClick = { if (isActivePage) menu(resolvedItem) })
         }
         }
 
@@ -1035,12 +944,12 @@ internal fun ShortPageContent(
             visible = chromeVisible || !isActivePage,
             enter = fadeIn(tween(180)) + slideInVertically(tween(200)) { it / 4 },
             exit = fadeOut(tween(140)) + slideOutVertically(tween(170)) { it / 4 },
-            modifier = Modifier.align(Alignment.BottomStart),
+            modifier = Modifier.align(AbsoluteAlignment.BottomLeft).testTag("shorts-metadata"),
         ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(start = 16.dp, end = 78.dp, bottom = bottomInset + 22.dp),
+                .absolutePadding(left = 12.dp, right = 88.dp, bottom = bottomInset + 44.dp),
         ) {
             if (channelName.isNotBlank()) {
                 Row(
@@ -1053,7 +962,7 @@ internal fun ShortPageContent(
                             .pressable(enabled = channelUrl != null) { channelUrl?.let(openChannel) },
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        ChannelAvatar(avatarUrl, channelName, size = 36)
+                        ChannelAvatar(avatarUrl, channelName, size = 28)
                         Spacer(Modifier.width(10.dp))
                         Text(
                             if (channelName.startsWith("@")) channelName else "@${channelName.replace(" ", "")}",
@@ -1072,12 +981,12 @@ internal fun ShortPageContent(
                                 .squishOn(subActive)
                                 .pressable { if (isActivePage) player.toggleSubscribe() }
                                 .clip(CircleShape)
-                                .background(if (subActive) Color.White.copy(alpha = 0.22f) else c.primary)
+                                .background(if (subActive) Color.White.copy(alpha = 0.22f) else Color.White)
                                 .padding(horizontal = 13.dp, vertical = 6.dp),
                         ) {
                             Text(
                                 if (subActive) Loc.t("Subscribed") else Loc.t("Subscribe"),
-                                color = if (subActive) Color.White else c.onPrimary,
+                                color = if (subActive) Color.White else Color.Black,
                                 fontWeight = FontWeight.ExtraBold,
                                 fontSize = 12.sp,
                             )
@@ -1113,7 +1022,7 @@ internal fun ShortPageContent(
 
         // Bottom seek line: the ticking position is read inside its own leaf, so
         // a playing Short never recomposes this whole page. Drag it to scrub.
-        ShortSeekBar(player, isActivePage, Modifier.align(Alignment.BottomStart))
+        ShortSeekBar(player, isActivePage && player.current?.id == item.id, Modifier.align(Alignment.BottomStart))
     }
 }
 
@@ -1128,13 +1037,13 @@ private fun ShortActionItem(
     val c = MaterialTheme.colorScheme
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.pressable(onClick = onClick),
+        modifier = Modifier.width(64.dp).pressable(onClick = onClick),
     ) {
         Box(
             modifier = Modifier
                 .size(46.dp)
                 .clip(CircleShape)
-                .background(if (active) c.primary else Color.Black.copy(alpha = 0.44f)),
+                .background(Color.Black.copy(alpha = 0.36f)),
             contentAlignment = Alignment.Center,
         ) {
             FlourishIcon(
@@ -1142,7 +1051,7 @@ private fun ShortActionItem(
                 description = label,
                 active = active,
                 kind = flourish,
-                tint = if (active) c.onPrimary else Color.White,
+                tint = if (active) Color(0xFFFF4444) else Color.White,
                 size = 22.dp,
                 sparkColor = c.primary,
             )
@@ -1167,79 +1076,23 @@ private fun ShortActionItem(
  * out of the per-tick recomposition while the video runs.
  */
 @Composable
-private fun BoxScope.ShortSeekBar(player: PlayerState, isActivePage: Boolean, modifier: Modifier = Modifier) {
-    if (!isActivePage || player.durationMs <= 0) return
-    val c = MaterialTheme.colorScheme
-    val duration = player.durationMs
-    var dragFraction by remember { mutableStateOf<Float?>(null) }
-    val progress by animateFloatAsState(
-        targetValue = dragFraction ?: (player.positionMs.toFloat() / duration).coerceIn(0f, 1f),
-        animationSpec = if (dragFraction != null) snap() else tween(150),
-        label = "shortProgress",
-    )
-    val dragging = dragFraction != null
-    Box(modifier.fillMaxWidth().height(22.dp)) {
-        Box(
-            Modifier
-                .align(Alignment.BottomStart)
-                .fillMaxWidth()
-                .height(if (dragging) 5.dp else 3.dp)
-                .background(Color.White.copy(alpha = 0.24f)),
-        ) {
-            Box(
-                Modifier
-                    .fillMaxHeight()
-                    .fillMaxWidth(progress)
-                    .background(c.primary),
-            )
+private fun ShortSeekBar(player: PlayerState, isActivePage: Boolean, modifier: Modifier = Modifier) {
+    if (!isActivePage) return
+    // Shared, accessible seek implementation. It is above the system/nav region, not
+    // under the shell's vignette or home-gesture guard. Remains present while paused.
+    Box(modifier.testTag("shorts-seek-bar")) {
+        androidx.compose.runtime.key(player.current?.id) {
+            Scrubber(emptyList(), player.positionMs, player.bufferedMs, player.durationMs,
+                enabled = player.durationMs > 0, onPreview = {}, onSeek = player::seekTo,
+                played = Color(0xFFFF0033), trackHeight = 3.dp,
+                knob = 0.dp, knobDragging = 6.dp, touchHeight = 32.dp)
         }
-        // Tap to jump; horizontal drag to scrub. Neither claims vertical moves, so the pager
-        // still turns the page and the video's own gestures are untouched outside this strip.
-        Box(
-            Modifier
-                .fillMaxSize()
-                .pointerInput(duration) {
-                    detectTapGestures { offset ->
-                        dragFraction = null
-                        player.seekTo((offset.x / size.width * duration).toLong())
-                    }
-                }
-                .pointerInput(duration) {
-                    detectHorizontalDragGestures(
-                        onDragStart = { offset ->
-                            dragFraction = (offset.x / size.width).coerceIn(0f, 1f)
-                        },
-                        onDragEnd = {
-                            dragFraction?.let { player.seekTo((it * duration).toLong()) }
-                            dragFraction = null
-                        },
-                        onDragCancel = { dragFraction = null },
-                    ) { change, _ ->
-                        change.consume()
-                        dragFraction = (change.position.x / size.width).coerceIn(0f, 1f)
-                    }
-                },
-        )
-        val drag = dragFraction
-        if (drag != null) {
-            Text(
-                formatDuration((drag * duration).toLong()) + " / " + formatDuration(duration),
-                color = Color.White,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Black,
-                modifier = Modifier
-                    .layout { measurable, constraints ->
-                        val placeable = measurable.measure(constraints.copy(minWidth = 0, minHeight = 0))
-                        layout(constraints.maxWidth, constraints.maxHeight) {
-                            val x = (drag * constraints.maxWidth - placeable.width / 2f)
-                                .coerceIn(0f, (constraints.maxWidth - placeable.width).coerceAtLeast(0).toFloat())
-                            placeable.place(x.toInt(), 0)
-                        }
-                    }
-                    .clip(RoundedCornerShape(50))
-                    .background(Color.Black.copy(alpha = 0.78f))
-                    .padding(horizontal = 10.dp, vertical = 4.dp),
-            )
-        }
+    }
+}
+
+@Composable
+private fun ShortsHeaderButton(icon: ImageVector, label: String, onClick: () -> Unit) {
+    Box(Modifier.size(48.dp).pressable(onClick = onClick), contentAlignment = Alignment.Center) {
+        Icon(icon, label, tint = Color.White, modifier = Modifier.size(24.dp))
     }
 }
