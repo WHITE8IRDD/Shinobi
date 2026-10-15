@@ -69,6 +69,61 @@ class PlayerRegressionTest {
         compose.waitUntil(10000) { observed == Configuration.ORIENTATION_PORTRAIT }
     }
 
+    @Test fun decodedVideoShowsAllFourEdgesInLandscapeFitMode() {
+        lateinit var backend: ExoPlayer
+        lateinit var session: MediaSession
+        lateinit var future: ListenableFuture<MediaController>
+        lateinit var state: PlayerState
+        compose.runOnIdle {
+            compose.activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+            backend = ExoPlayer.Builder(compose.activity).build()
+            backend.setMediaItem(MediaItem.Builder().setMediaId("offline-fit").setUri("asset:///player-fit.mp4").build())
+            backend.repeatMode = androidx.media3.common.Player.REPEAT_MODE_ONE
+            session = MediaSession.Builder(compose.activity, backend).build()
+            future = MediaController.Builder(compose.activity, session.token).buildAsync()
+        }
+        val controller = future.get(10, TimeUnit.SECONDS)
+        try {
+            compose.runOnIdle {
+                state = offlineState()
+                state.controller = controller
+                state.onConnected()
+                controller.addListener(state.listener)
+            }
+            compose.setContent {
+                MaterialTheme {
+                    CompositionLocalProvider(LocalVideoSurface provides { modifier ->
+                        VideoSurface(controller, modifier, onFrame = state::onVideoFrame)
+                    }) { FullscreenPlayer(state, {}) }
+                }
+            }
+            compose.runOnIdle { controller.prepare(); controller.play() }
+            compose.waitUntil(15000) { state.firstFrameRendered && state.videoAspect < 1.4f }
+            val root = compose.onRoot().fetchSemanticsNode().boundsInRoot
+            val fit = compose.onNodeWithTag("fitted-video").fetchSemanticsNode().boundsInRoot
+            assertTrue(root.width > root.height)
+            assertEquals(4f / 3f, fit.width / fit.height, 0.02f)
+            val pixels = compose.onRoot().captureToImage().toPixelMap()
+            fun pixel(x: Float, y: Float) = pixels[(fit.left + fit.width * x).toInt(), (fit.top + fit.height * y).toInt()]
+            val left = pixel(0.02f, 0.5f)
+            val right = pixel(0.98f, 0.5f)
+            val top = pixel(0.5f, 0.02f)
+            val bottom = pixel(0.5f, 0.98f)
+            assertTrue("left red edge cropped: $left", left.red > 0.7f && left.blue < 0.3f)
+            assertTrue("right blue edge cropped: $right", right.blue > 0.7f && right.red < 0.3f)
+            assertTrue("top yellow edge cropped: $top", top.red > 0.7f && top.green > 0.7f)
+            assertTrue("bottom cyan edge cropped: $bottom", bottom.green > 0.7f && bottom.blue > 0.7f)
+            compose.onRoot().performTouchInput { click(center) }
+            compose.onNodeWithTag("player-scrubber").assertIsDisplayed()
+        } finally {
+            compose.runOnIdle {
+                controller.removeListener(state.listener)
+                controller.release(); session.release(); backend.release()
+                compose.activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+            }
+        }
+    }
+
     @Test fun fitCentersTallAndWideVideosWithoutCropping() {
         compose.setContent {
             Column {
@@ -148,6 +203,17 @@ class PlayerRegressionTest {
         }
     }
 
+    @Test fun leavingShortsWithoutSuspendedVideoDoesNotCreateMiniPlayer() {
+        compose.runOnIdle {
+            val state = offlineState()
+            state.enterShortsMode()
+            state.openShort(VideoItem("offline-only-short", "Short", "", null, null, null, 20, 0, null, isShort = true))
+            state.exitShortsMode()
+            assertNull(state.current)
+            assertFalse(state.inShortsMode)
+        }
+    }
+
     @Test fun shortsTemporarilyOwnsDecoderAndRestoresPausedMiniPlayerAndQueue() {
         lateinit var backend: ExoPlayer
         lateinit var session: MediaSession
@@ -189,6 +255,11 @@ class PlayerRegressionTest {
                 // Repeated exit must not discard the restored mini-player.
                 state.exitShortsMode()
                 assertEquals("offline-normal", state.current?.id)
+                controller.playWhenReady = true
+                state.enterShortsMode()
+                assertFalse(controller.playWhenReady)
+                state.exitShortsMode()
+                assertTrue("playing mini-player must resume on exit", controller.playWhenReady)
             }
         } finally {
             compose.runOnIdle { controller.release(); session.release(); backend.release() }

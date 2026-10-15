@@ -149,6 +149,7 @@ class PlayerState(private val scope: CoroutineScope) {
             inShortsMode = false
             controller?.repeatMode = Player.REPEAT_MODE_OFF
         }
+        pendingRestore = null
         if (expand) expanded = true
         if (current?.id == item.id && error == null) return
         known[item.id] = item
@@ -163,6 +164,7 @@ class PlayerState(private val scope: CoroutineScope) {
         val playWhenReady: Boolean,
     )
     private var suspendedVideo: SuspendedVideo? = null
+    private var pendingRestore: SuspendedVideo? = null
 
     /** Shorts temporarily owns the one decoder; keep the normal mini-player's queue/position. */
     fun enterShortsMode() {
@@ -205,21 +207,22 @@ class PlayerState(private val scope: CoroutineScope) {
             known[saved.item.id] = saved.item
             show(saved.item, startPlayback = false)
             val p = controller
-            if (p != null) {
-                swapping = true
-                try {
-                    val items = saved.items.ifEmpty { listOf(mediaItemFor(saved.item)) }
-                    p.setMediaItems(items, saved.index.coerceIn(0, items.lastIndex), saved.position.coerceAtLeast(0L))
-                    p.prepare()
-                    p.playWhenReady = saved.playWhenReady
-                } finally {
-                    swapping = false
-                }
-                rebuildQueue()
-            } else {
-                pendingStart = saved.item
-            }
+            if (p != null) restorePlayback(p, saved) else pendingRestore = saved
         }
+    }
+
+    private fun restorePlayback(p: MediaController, saved: SuspendedVideo) {
+        swapping = true
+        try {
+            val items = saved.items.ifEmpty { listOf(mediaItemFor(saved.item)) }
+            p.setMediaItems(items, saved.index.coerceIn(0, items.lastIndex), saved.position.coerceAtLeast(0L))
+            p.prepare()
+            p.playWhenReady = saved.playWhenReady
+        } finally {
+            swapping = false
+        }
+        rebuildQueue()
+        syncFromPlayer()
     }
 
     /**
@@ -313,8 +316,15 @@ class PlayerState(private val scope: CoroutineScope) {
     private fun startPlayback(item: VideoItem) {
         LocalHistory.record(item)
         val player = controller ?: run { pendingStart = item; return }
-        // Pick up where this video was left off (ResumeStore; written by the service).
-        replaceCurrent(player, item, positionMs = ResumeStore.startPosition(item.id))
+        if (inShortsMode) {
+            // Shorts recycle one media item/decoder. The normal queue is suspended above,
+            // not left behind every Short; revisiting a page starts it from the beginning.
+            player.setMediaItem(mediaItemFor(item), 0L)
+            player.prepare()
+        } else {
+            // Pick up where this video was left off (ResumeStore; written by the service).
+            replaceCurrent(player, item, positionMs = ResumeStore.startPosition(item.id))
+        }
         player.play()
     }
 
@@ -701,6 +711,7 @@ class PlayerState(private val scope: CoroutineScope) {
 
     fun close() {
         suspendedVideo = null
+        pendingRestore = null
         pendingStart = null
         loadJob?.cancel()
         captionsJob?.cancel()
@@ -733,6 +744,7 @@ class PlayerState(private val scope: CoroutineScope) {
         syncFromPlayer()
         applyVideoTrack()
         controller?.videoSize?.let(::takeVideoSize)
+        pendingRestore?.let { pendingRestore = null; restorePlayback(controller ?: return, it); return }
         pendingStart?.let { pendingStart = null; startPlayback(it); return }
         val player = controller ?: return
         rebuildQueue()
@@ -763,7 +775,7 @@ class PlayerState(private val scope: CoroutineScope) {
 
     internal fun syncFromPlayer() {
         val player = controller ?: return
-        if (player.currentMediaItem?.mediaId != current?.id) return
+        if (current != null && player.currentMediaItem?.mediaId != current?.id) return
         isPlaying = player.isPlaying
         // While the service refetches refused links the player sits idle; show the spinner.
         isBuffering = player.playbackState == Player.STATE_BUFFERING || StreamRecovery.recovering == current?.id

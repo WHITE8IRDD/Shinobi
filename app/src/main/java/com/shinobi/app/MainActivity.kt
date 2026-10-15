@@ -255,7 +255,7 @@ fun ShinobiApp() {
     // Fullscreen is whenever the open player is shown in landscape (rotation or button).
     val activity = LocalContext.current as Activity
     val orientation = rememberOrientationController(activity)
-    val playerOpen = tab != Tab.Shorts && !player.inShortsMode && player.current != null && player.expanded
+    val playerOpen = !player.inShortsMode && player.current != null && player.expanded
     // Audio only has no picture to go fullscreen with: the open player stays portrait.
     orientation.Bind(playerOpen && !AudioOnly.enabled)
     val pip = remember(activity) { PipController(activity as ComponentActivity) }
@@ -288,7 +288,10 @@ fun ShinobiApp() {
     }
     val showPlayer by remember {
         // Held until the morph has completely finished, so the video changes hands once.
-        derivedStateOf { tab != Tab.Shorts && !player.inShortsMode && player.current != null && (player.expanded || morph.dragging || morph.progress.isRunning || morph.progress.value > 0f) }
+        derivedStateOf {
+            !player.inShortsMode && player.current != null &&
+                (player.expanded || (tab != Tab.Shorts && (morph.dragging || morph.progress.isRunning || morph.progress.value > 0f)))
+        }
     }
 
     BoxWithConstraints(Modifier.fillMaxSize().background(c.surface)) {
