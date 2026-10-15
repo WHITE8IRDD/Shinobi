@@ -104,6 +104,7 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -190,8 +191,6 @@ fun ShinobiApp() {
     val scrollToTop = remember { mutableStateMapOf<Tab, Int>() }
     val reduced = rememberReducedMotion()
     val morph = remember { PlayerMorph(scope) { expanded -> player.expanded = expanded } }
-    // Shorts owns the whole screen while a Short plays (see ShortsFocusState).
-    val shortsFocus = remember { ShortsFocusState() }
 
     fun openShortItem(item: VideoItem, shelf: List<VideoItem> = emptyList()) {
         openPlaylist = null
@@ -208,8 +207,10 @@ fun ShinobiApp() {
         if (tab == Tab.Shorts) player.enterShortsMode() else player.exitShortsMode()
     }
     // Home's silent previews step aside the moment a real video plays.
-    SideEffect { FeedPreview.suppressed = { player.isPlaying } }
-    LaunchedEffect(player.isPlaying) { if (player.isPlaying) FeedPreview.stop() }
+    SideEffect { FeedPreview.suppressed = { player.current != null || tab != Tab.Home } }
+    LaunchedEffect(player.current?.id, tab) {
+        if (player.current != null || tab != Tab.Home) FeedPreview.release()
+    }
 
     // The screen stays on while a video plays (full player, mini-player or fullscreen);
     // paused, the normal timeout applies again. Only affects the visible window.
@@ -354,7 +355,7 @@ fun ShinobiApp() {
         // A sideways swipe across a page moves to the neighbouring tab (see tabSwipe); the
         // page then slides in from the side the finger revealed, where a tapped tab rises.
         val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
-        val swipeable = openChannel == null && openPlaylist == null && !showPlayer && !showFullscreen
+        val swipeable = tab != Tab.Shorts && openChannel == null && openPlaylist == null && !showPlayer && !showFullscreen
         Box(
             Modifier.fillMaxSize().tabSwipe(swipeable, rtl) { forward ->
                 val next = Tab.entries.getOrNull(tab.ordinal + if (forward) 1 else -1) ?: return@tabSwipe
@@ -390,16 +391,18 @@ fun ShinobiApp() {
                     onAccount = { accountSheet = true },
                     scrollToTop = scrollToTop[Tab.Home] ?: 0,
                 )
-                Tab.Shorts -> ShortsScreen(
+                Tab.Shorts -> Box(Modifier.fillMaxSize().padding(bottom = navBottom + 56.dp)) {
+                ShortsScreen(
                     state = shortsFeed,
                     player = player,
-                    focus = shortsFocus,
                     // Only the system bar's height: the video runs under where the tab bar
                     // would be, because the tab bar gets out of the way here.
-                    bottomInset = navBottom.coerceAtLeast(8.dp),
+                    bottomInset = 0.dp,
                     showSurface = tab == Tab.Shorts && !showPlayer && !showFullscreen && openChannel == null && openPlaylist == null,
                     onSearch = { tab = Tab.Search },
+                    onBack = { tab = Tab.Home },
                 )
+                }
                 Tab.Subscriptions -> SubscriptionsScreen(
                     lib = lib,
                     localSubs = localSubs,
@@ -468,7 +471,7 @@ fun ShinobiApp() {
         val inDarkShorts = tab == Tab.Shorts && openChannel == null && openPlaylist == null
         val pageColor = if (inDarkShorts) ShortsBackdrop else c.surface
         val vignette = remember(pageColor) { vignetteBrush(pageColor, opaqueAtTop = false) }
-        Box(
+        if (!inDarkShorts) Box(
             Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
@@ -476,7 +479,7 @@ fun ShinobiApp() {
                 .drawBehind { drawRect(vignette) },
         )
         // Swiping home from here never scrolls the page (the tab bar above still wins its taps).
-        BottomGestureGuard(Modifier.align(Alignment.BottomCenter))
+        if (!inDarkShorts) BottomGestureGuard(Modifier.align(Alignment.BottomCenter))
 
         if (hasMini) {
             // Swipe up expands (the morph); swipe down follows the finger and, past a
@@ -526,19 +529,12 @@ fun ShinobiApp() {
             )
         }
 
-        // The tab bar is part of the chrome that steps aside while a Short plays: it slides
-        // down and fades out with the rest of the controls, and comes back on a tap.
-        val navHidden = tab == Tab.Shorts && shortsFocus.engaged && !shortsFocus.chromeVisible
-        val navAlpha by animateFloatAsState(
-            targetValue = if (navHidden) 0f else 1f,
-            animationSpec = tween(200, easing = Motion.Emphasized),
-            label = "navAlpha",
-        )
-        val navRise by animateDpAsState(
-            targetValue = if (navHidden) NavHeight + 24.dp else 0.dp,
-            animationSpec = tween(260, easing = Motion.Emphasized),
-            label = "navRise",
-        )
+        // Shorts has an opaque, flat navigation row OUTSIDE the video viewport. No
+        // floating app pill, player vignette or tab-swipe detector may cover its progress bar.
+        if (inDarkShorts) Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+            .height(navBottom + 56.dp).background(ShortsBackdrop)) {
+            ShortsNavigation(tab, { tab = it }, Modifier.padding(bottom = navBottom))
+        } else
         NavPill(
             selected = tab,
             onSelect = { selected ->
@@ -552,11 +548,7 @@ fun ShinobiApp() {
             },
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .padding(start = 16.dp, end = 16.dp, bottom = stackBottom)
-                .graphicsLayer {
-                    translationY = with(density) { navRise.toPx() }
-                    alpha = navAlpha
-                },
+                .padding(start = 16.dp, end = 16.dp, bottom = stackBottom),
         )
 
         // The player morphs out of (and back into) the mini-player; see PlayerMorph.
@@ -711,6 +703,23 @@ internal fun NavPill(selected: Tab, onSelect: (Tab) -> Unit, modifier: Modifier 
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+/** Shorts-only navigation: never laid over the video, seek strip, or creator metadata. */
+@Composable
+internal fun ShortsNavigation(selected: Tab, onSelect: (Tab) -> Unit, modifier: Modifier = Modifier) {
+    Row(modifier.fillMaxWidth().height(56.dp).background(ShortsBackdrop)
+        .testTag("shorts-navigation"), verticalAlignment = Alignment.CenterVertically) {
+        Tab.entries.forEach { tab ->
+            Column(Modifier.weight(1f).fillMaxHeight().clickable { onSelect(tab) },
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center) {
+                Icon(if (tab == selected) tab.selectedIcon else tab.icon, Loc.t(tab.label),
+                    tint = Color.White, modifier = Modifier.size(22.dp))
+                Text(Loc.t(tab.label), color = Color.White, fontSize = 9.sp, maxLines = 1)
             }
         }
     }

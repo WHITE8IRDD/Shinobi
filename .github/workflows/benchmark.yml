@@ -1,0 +1,58 @@
+name: Release performance
+
+on:
+  push:
+    branches: [arena/17aa39de-shinobi]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[benchmark]')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Real-input minified target benchmarks (emulator, not physical-device certification)
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_2
+          ram-size: 2048M
+          disable-animations: false
+          script: |
+            adb shell svc wifi disable
+            adb shell svc data disable
+            bash -o pipefail -c './gradlew :benchmark:connectedBenchmarkAndroidTest -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.suppressErrors=EMULATOR --console=plain 2>&1 | tee benchmark.log'
+      - name: Summarize benchmark tests
+        if: always()
+        run: python3 .github/scripts/summarize_tests.py benchmark/build/outputs/androidTest-results
+      - name: Report release frame metrics
+        if: always()
+        run: python3 .github/scripts/summarize_benchmarks.py benchmark/build/outputs
+      - name: Annotate failures
+        if: failure()
+        run: python3 .github/scripts/annotate_failure.py benchmark.log 200
+      - name: Upload metrics, traces and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-performance
+          path: |
+            benchmark/build/outputs
+            benchmark/build/reports
+            benchmark.log
+          retention-days: 14

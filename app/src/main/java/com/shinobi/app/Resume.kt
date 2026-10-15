@@ -77,6 +77,8 @@ class ResumeSaver(private val player: Player) : Player.Listener {
         }
     }
 
+    fun close() { handler.removeCallbacksAndMessages(null) }
+
     fun saveNow() {
         val id = player.currentMediaItem?.mediaId ?: return
         lastId = id

@@ -18,6 +18,9 @@ object DeviceCodec {
     private const val ALWAYS_OK_HEIGHT = 480
 
     private val cache = HashMap<String, Boolean>()
+    private val hardwareCache = HashMap<String, Boolean>()
+    private val decoders by lazy { MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos }
+
 
     /** [mimeType] e.g. "video/avc"; null means unknown, answered from the height alone. */
     @Synchronized
@@ -41,11 +44,10 @@ object DeviceCodec {
 
     private fun probe(mime: String, width: Int, height: Int, fps: Int): Boolean {
         return runCatching {
-            val list = MediaCodecList(MediaCodecList.REGULAR_CODECS)
             val w = if (width > 0) width else (height * 16 / 9)
             val rate = fps.coerceIn(24, 120).toDouble()
             var softwareOnly = false
-            for (info in list.codecInfos) {
+            for (info in decoders) {
                 if (info.isEncoder) continue
                 val video = videoCaps(info, mime) ?: continue
                 if (!video.areSizeAndRateSupported(w, height, rate)) continue
@@ -64,17 +66,20 @@ object DeviceCodec {
     @Synchronized
     fun hardwareAccelerated(mimeType: String?, width: Int, height: Int, fps: Int): Boolean {
         if (mimeType == null || height <= ALWAYS_OK_HEIGHT) return true
-        return runCatching {
-            val list = MediaCodecList(MediaCodecList.REGULAR_CODECS)
+        val key = "$mimeType|$width|$height|$fps"
+        hardwareCache[key]?.let { return it }
+        val supported = runCatching {
             val w = if (width > 0) width else (height * 16 / 9)
             val rate = fps.coerceIn(24, 120).toDouble()
-            for (info in list.codecInfos) {
+            for (info in decoders) {
                 if (info.isEncoder || isSoftwareDecoder(info.name)) continue
                 val video = videoCaps(info, mimeType) ?: continue
                 if (video.areSizeAndRateSupported(w, height, rate)) return@runCatching true
             }
             false
         }.getOrDefault(true)
+        hardwareCache[key] = supported
+        return supported
     }
 
     /** MIME type for one of YouTube's video streams, from its codec string or container. */

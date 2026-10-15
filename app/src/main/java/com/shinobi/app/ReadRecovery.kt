@@ -8,6 +8,7 @@ import kotlin.random.Random
 
 /** HTTP failures are service failures, not evidence that the phone is offline. */
 internal class HttpFailure(val status: Int, val retryAfterMs: Long? = null) : IOException("YouTube returned $status")
+internal class GeneralTrendingUnavailable : IOException("YouTube retired the combined regional Trending feed")
 internal class EmptyFeedException : IOException("YouTube returned no usable suggestions")
 internal class ServiceResponseException(cause: Throwable? = null) : IOException("YouTube returned an unreadable response", cause)
 

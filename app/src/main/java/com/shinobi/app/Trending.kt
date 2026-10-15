@@ -29,12 +29,13 @@ import kotlinx.coroutines.launch
 import java.util.Locale
 
 /**
- * The charts YouTube publishes since it retired the combined Trending page (21 July 2025):
- * each is a real YouTube page, in the order YouTube's own Explore hub lists them. Music and
- * Movies come from YouTube Charts and only exist for [YouTube.CHART_COUNTRIES]; Gaming and
- * Podcasts exist everywhere. [kioskId] is NewPipeExtractor's name for the page.
+ * All requests the original regional FEtrending feed, without ever substituting Gaming.
+ * That feed was retired by YouTube in July 2025 and currently returns HTTP 400. We show
+ * its absence honestly, alongside explicitly labelled category charts. Music and Movies
+ * are only offered where Charts publishes them. [kioskId] uses NewPipeExtractor's IDs.
  */
 enum class TrendingCategory(val kioskId: String, val title: String, val chartsOnly: Boolean) {
+    General("Trending", "All", chartsOnly = false),
     Music("trending_music", "Music", chartsOnly = true),
     Movies("trending_movies_and_shows", "Movies & trailers", chartsOnly = true),
     Gaming("trending_gaming", "Gaming", chartsOnly = false),
@@ -44,6 +45,7 @@ enum class TrendingCategory(val kioskId: String, val title: String, val chartsOn
 
     val icon: ImageVector
         get() = when (this) {
+            General -> Icons.Rounded.TravelExplore
             Music -> Icons.Rounded.MusicNote
             Movies -> Icons.Rounded.Movie
             Gaming -> Icons.Rounded.SportsEsports
@@ -53,8 +55,8 @@ enum class TrendingCategory(val kioskId: String, val title: String, val chartsOn
     companion object {
         fun availableIn(country: String): List<TrendingCategory> = entries.filter { it.availableIn(country) }
 
-        /** The first chart that exists for [country]: Music where Charts covers it, Gaming elsewhere. */
-        fun defaultFor(country: String): TrendingCategory = availableIn(country).first()
+        /** A category-specific chart is never a substitute for a country's combined feed. */
+        fun defaultFor(country: String): TrendingCategory = General
     }
 }
 
@@ -108,10 +110,14 @@ class TrendingState(
                 val items = loader(country, chart)
                 if (!isActive) return@launch
                 videos = items.distinctBy { it.id }.take(100)
-                if (videos.isEmpty()) error = Loc.t("YouTube has no trending chart for this country right now.")
+                if (videos.isEmpty()) error = Loc.t(if (chart == TrendingCategory.General)
+                    "YouTube no longer publishes a combined regional Trending list. Choose an available category chart below; gaming is never substituted for All."
+                    else "YouTube has no trending chart for this country right now.")
                 else cache[key] = System.currentTimeMillis() to videos
             } catch (e: CancellationException) { throw e }
-            catch (e: Exception) { if (isActive) error = YouTube.friendlyError(e) }
+            catch (e: Exception) { if (isActive) error = if (e is GeneralTrendingUnavailable)
+                Loc.t("YouTube no longer publishes a combined regional Trending list. Choose an available category chart below; gaming is never substituted for All.")
+                else YouTube.friendlyError(e) }
             finally { if (isActive) loading = false }
         }
     }

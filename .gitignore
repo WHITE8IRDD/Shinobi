@@ -19,3 +19,7 @@ keystore.properties
 
 # Local tooling for the branding generator (npm install --no-save sharp)
 branding/node_modules/
+
+# Python tooling
+__pycache__/
+*.pyc

@@ -10,6 +10,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.isSpecified
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.withTransform
@@ -20,7 +21,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.rememberAsyncImagePainter
 import coil.request.ImageRequest
-import coil.size.Size
 
 /** Metadata only: decoded sprite sheets are owned/bounded by Coil's normal image cache. */
 data class SeekStoryboard(
@@ -36,6 +36,8 @@ data class SeekStoryboard(
 
     fun frameAt(positionMs: Long): Frame? {
         if (width <= 0 || height <= 0 || count <= 0 || intervalMs <= 0 || columns <= 0 || rows <= 0) return null
+        // Reject corrupt metadata before either integer coordinates or image allocations overflow.
+        if (width.toLong() * columns > 8192 || height.toLong() * rows > 8192) return null
         val perSheet = columns.toLong() * rows
         val available = minOf(count.toLong(), perSheet * urls.size)
         if (available <= 0) return null
@@ -64,7 +66,14 @@ internal fun SeekThumbnail(storyboard: SeekStoryboard?, thumbnail: String?, posi
         } else {
             val context = LocalContext.current
             val request = remember(frame.url) {
-                ImageRequest.Builder(context).data(frame.url).size(Size.ORIGINAL).build()
+                // Decode at most a 2048px sheet, never an unbounded ORIGINAL bitmap on a
+                // 2GB phone. Draw in metadata coordinates below, even when Coil downsamples.
+                val w = storyboard.width * storyboard.columns
+                val h = storyboard.height * storyboard.rows
+                val scale = minOf(1f, 2048f / maxOf(w, h))
+                ImageRequest.Builder(context).data(frame.url)
+                    .size((w * scale).toInt().coerceAtLeast(1), (h * scale).toInt().coerceAtLeast(1))
+                    .allowHardware(false).build()
             }
             val painter = rememberAsyncImagePainter(request)
             Box(imageModifier) {
@@ -72,12 +81,15 @@ internal fun SeekThumbnail(storyboard: SeekStoryboard?, thumbnail: String?, posi
                 Thumbnail(thumbnail, Modifier.fillMaxSize(), radius = 6)
                 Canvas(Modifier.fillMaxSize()) {
                     val sheet = painter.intrinsicSize
-                    if (sheet.width.isFinite() && sheet.height.isFinite() && sheet.width > 0 && sheet.height > 0) {
+                    if (sheet.isSpecified && sheet.width.isFinite() && sheet.height.isFinite() && sheet.width > 0 && sheet.height > 0) {
                         clipRect {
                             withTransform({
                                 scale(size.width / storyboard.width, size.height / storyboard.height, pivot = androidx.compose.ui.geometry.Offset.Zero)
                                 translate(-frame.left.toFloat(), -frame.top.toFloat())
-                            }) { with(painter) { draw(sheet) } }
+                            }) { with(painter) { draw(androidx.compose.ui.geometry.Size(
+                                (storyboard.width * storyboard.columns).toFloat(),
+                                (storyboard.height * storyboard.rows).toFloat(),
+                            )) } }
                         }
                     }
                 }

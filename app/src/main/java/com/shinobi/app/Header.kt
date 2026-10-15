@@ -1,6 +1,6 @@
 package com.shinobi.app
 
-import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -16,6 +16,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -57,10 +59,11 @@ fun CollapsingHeaderLayout(
     val scope = rememberCoroutineScope()
     var headerPx by remember { mutableIntStateOf(0) }
     /** 0 = fully shown, -headerPx = fully hidden. */
-    val offset = remember { Animatable(0f) }
+    var offset by remember { mutableFloatStateOf(0f) }
+    var settling by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
     val settleSpec = spring<Float>(dampingRatio = 0.9f, stiffness = 420f)
 
-    LaunchedEffect(resetKey) { if (reduced) offset.snapTo(0f) else offset.animateTo(0f, settleSpec) }
+    LaunchedEffect(resetKey) { settling?.cancel(); offset = 0f }
 
     val connection = remember(reduced) {
         object : NestedScrollConnection {
@@ -69,17 +72,22 @@ fun CollapsingHeaderLayout(
                 if (h <= 0f || consumed.y == 0f) return Offset.Zero
                 // Follows what the list actually scrolled, so a list too short to scroll
                 // (or the pull-to-refresh overscroll) never moves the header.
-                val target = (offset.value + consumed.y).coerceIn(-h, 0f)
-                scope.launch { offset.snapTo(target) }
+                // Scroll callbacks are already on the UI thread. Spawning a coroutine and
+                // taking Animatable's mutex per pointer sample backlogs low-end devices.
+                settling?.cancel()
+                offset = (offset + consumed.y).coerceIn(-h, 0f)
                 return Offset.Zero
             }
 
             override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
                 val h = headerPx.toFloat()
-                val v = offset.value
+                val v = offset
                 if (h > 0f && v < 0f && v > -h) {
                     val target = if (v < -h / 2f) -h else 0f
-                    if (reduced) offset.snapTo(target) else offset.animateTo(target, settleSpec)
+                    settling?.cancel()
+                    if (reduced) offset = target else settling = scope.launch {
+                        animate(v, target, animationSpec = settleSpec) { value, _ -> offset = value }
+                    }
                 }
                 return Velocity.Zero
             }
@@ -97,7 +105,7 @@ fun CollapsingHeaderLayout(
                 .align(Alignment.TopCenter)
                 .fillMaxWidth()
                 .height((statusTop + 72.dp) / 2)
-                .graphicsLayer { alpha = if (headerPx > 0) (-offset.value / headerPx).coerceIn(0f, 1f) else 0f }
+                .graphicsLayer { alpha = if (headerPx > 0) (-offset / headerPx).coerceIn(0f, 1f) else 0f }
                 .drawBehind { drawRect(vignette) },
         )
         Box(
@@ -105,9 +113,9 @@ fun CollapsingHeaderLayout(
                 .fillMaxWidth()
                 .onSizeChanged { headerPx = it.height }
                 .graphicsLayer {
-                    translationY = offset.value
+                    translationY = offset
                     // Eases out as it leaves, so the edge never reads as a hard sliding slab.
-                    alpha = if (headerPx > 0) 1f - 0.5f * (-offset.value / headerPx).coerceIn(0f, 1f) else 1f
+                    alpha = if (headerPx > 0) 1f - 0.5f * (-offset / headerPx).coerceIn(0f, 1f) else 1f
                 }
                 .background(c.surface),
         ) { header() }

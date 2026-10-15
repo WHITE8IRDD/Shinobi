@@ -564,13 +564,6 @@ fun FeedSettings() {
             onCheckedChange = { AppSettings.mixShortsInFeed = it },
         )
         SettingSwitchRow(
-            icon = Icons.Rounded.VisibilityOff,
-            title = Loc.t("Auto-hide Shorts controls"),
-            subtitle = Loc.t("Hide the controls while a Short plays, and bring them back with a tap."),
-            checked = AppSettings.shortsAutoHide,
-            onCheckedChange = { AppSettings.shortsAutoHide = it },
-        )
-        SettingSwitchRow(
             icon = Icons.Rounded.BlurOn,
             title = Loc.t("Blur sensitive thumbnails"),
             subtitle = Loc.t("Blur age-restricted and mature thumbnails. Regular videos are never blurred."),

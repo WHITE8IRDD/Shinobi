@@ -107,12 +107,20 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
+      - name: Name the 2.0 candidate APK
+        if: success()
+        run: |
+          mkdir -p package
+          cp app/build/outputs/apk/release/app-release.apk 'package/SHINOBI 2.0.apk'
+
       - name: Upload APKs
         if: success()
         uses: actions/upload-artifact@v4
         with:
           name: shinobi-apks
-          path: app/build/outputs/apk/**/*.apk
+          path: |
+            app/build/outputs/apk/**/*.apk
+            package/*.apk
           if-no-files-found: error
           retention-days: 14
 
@@ -162,6 +170,14 @@ jobs:
           else
             echo "No screenshots directory."
           fi
+      - name: Report measured frame timings
+        if: always()
+        run: |
+          python3 - <<'PYTHON'
+          import pathlib
+          for path in pathlib.Path('screenshots').rglob('performance-scroll*.txt'):
+              print('::notice::' + path.read_text().replace('%', '%25').replace('\n', '%0A'))
+          PYTHON
       - name: Upload screenshots
         if: always()
         uses: actions/upload-artifact@v4
