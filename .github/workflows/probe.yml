@@ -27,8 +27,10 @@ jobs:
       # Which public route still carries a country's real trending list. The report is
       # committed to the branch, so the whole answer is readable without a log download.
       - name: Probe the regional trending routes
+        env:
+          COUNTRY: ${{ github.event.inputs.country || 'MA' }}
         run: |
-          python3 .github/scripts/probe_trending.py "${{ github.event.inputs.country || 'MA' }}" "docs/probes/trending-${{ github.event.inputs.country || 'MA' }}.md"
+          python3 .github/scripts/probe_trending.py "$COUNTRY" "docs/probes/trending-$COUNTRY.md"
 
       - name: Commit the probe report
         run: |

@@ -476,6 +476,24 @@ fun ShortsScreen(
     val context = LocalContext.current
     var commentsOpenFor by remember { mutableStateOf<String?>(null) }
 
+    // The Shorts viewport is black in both app themes, including the system-bar region.
+    DisposableEffect(view, showSurface) {
+        val window = (context as? android.app.Activity)?.window
+        val bars = window?.let { androidx.core.view.WindowCompat.getInsetsController(it, view) }
+        val oldStatus = bars?.isAppearanceLightStatusBars
+        val oldNav = bars?.isAppearanceLightNavigationBars
+        if (showSurface) {
+            bars?.isAppearanceLightStatusBars = false
+            bars?.isAppearanceLightNavigationBars = false
+        }
+        onDispose {
+            if (showSurface) {
+                oldStatus?.let { bars?.isAppearanceLightStatusBars = it }
+                oldNav?.let { bars?.isAppearanceLightNavigationBars = it }
+            }
+        }
+    }
+
     LaunchedEffect(Unit) { state.ensureLoaded() }
 
     // Playback ownership follows the selected tab in ShinobiApp, not disposal: the

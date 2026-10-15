@@ -11,11 +11,14 @@ whole answer is readable without downloading a log.
 """
 import json
 import os
+import re
 import sys
 import urllib.error
 import urllib.request
 
 COUNTRY = sys.argv[1] if len(sys.argv) > 1 else "MA"
+if not re.fullmatch(r"[A-Z]{2}", COUNTRY):
+    raise SystemExit("Expected a two-letter uppercase country code")
 OUT = sys.argv[2] if len(sys.argv) > 2 else "trending-probe.md"
 WEB_VERSION = "2.20260901.00.00"
 MWEB_VERSION = "2.20260901.01.00"

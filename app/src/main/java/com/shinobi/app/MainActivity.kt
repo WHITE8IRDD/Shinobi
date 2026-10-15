@@ -531,9 +531,10 @@ fun ShinobiApp() {
 
         // Shorts has an opaque, flat navigation row OUTSIDE the video viewport. No
         // floating app pill, player vignette or tab-swipe detector may cover its progress bar.
-        if (inDarkShorts) ShortsNavigation(tab, { tab = it },
-            Modifier.align(Alignment.BottomCenter).padding(bottom = navBottom))
-        else
+        if (inDarkShorts) Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+            .height(navBottom + 56.dp).background(ShortsBackdrop)) {
+            ShortsNavigation(tab, { tab = it }, Modifier.padding(bottom = navBottom))
+        } else
         NavPill(
             selected = tab,
             onSelect = { selected ->
