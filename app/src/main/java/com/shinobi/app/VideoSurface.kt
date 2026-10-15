@@ -66,7 +66,8 @@ object SharedVideoTexture {
  * the player's output surface is set once and never cleared while the app runs.
  */
 @Composable
-fun VideoSurface(player: Player?, modifier: Modifier = Modifier) {
+fun VideoSurface(player: Player?, modifier: Modifier = Modifier, onFrame: () -> Unit = {}) {
+    val currentOnFrame by androidx.compose.runtime.rememberUpdatedState(onFrame)
     AndroidView(
         modifier = modifier,
         factory = { context ->
@@ -85,7 +86,10 @@ fun VideoSurface(player: Player?, modifier: Modifier = Modifier) {
                     }
                     // Never let the view release it: the next view (or this one, re-attached) reuses it.
                     override fun onSurfaceTextureDestroyed(st: SurfaceTexture): Boolean = st !== SharedVideoTexture.texture
-                    override fun onSurfaceTextureUpdated(st: SurfaceTexture) = AvSync.onFrameDrawn()
+                    override fun onSurfaceTextureUpdated(st: SurfaceTexture) {
+                        AvSync.onFrameDrawn()
+                        currentOnFrame()
+                    }
                 }
                 addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
                     override fun onViewAttachedToWindow(v: View) {

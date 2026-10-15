@@ -24,6 +24,7 @@ import androidx.media3.common.Player
 import androidx.media3.common.VideoSize
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -144,6 +145,7 @@ class PlayerState(private val scope: CoroutineScope) {
 
     fun open(item: VideoItem, expand: Boolean = true) {
         if (inShortsMode) {
+            suspendedVideo = null
             inShortsMode = false
             controller?.repeatMode = Player.REPEAT_MODE_OFF
         }
@@ -153,12 +155,37 @@ class PlayerState(private val scope: CoroutineScope) {
         show(item, startPlayback = true)
     }
 
-    /** Plays [item] inside the vertical Shorts feed (looping, no mini-player). */
-    fun openShort(item: VideoItem) {
-        val shortItem = item.copy(isShort = true)
+    private data class SuspendedVideo(
+        val item: VideoItem,
+        val items: List<MediaItem>,
+        val index: Int,
+        val position: Long,
+        val playWhenReady: Boolean,
+    )
+    private var suspendedVideo: SuspendedVideo? = null
+
+    /** Shorts temporarily owns the one decoder; keep the normal mini-player's queue/position. */
+    fun enterShortsMode() {
+        if (inShortsMode) return
+        val p = controller
+        suspendedVideo = current?.takeIf { !it.isShort }?.let { item ->
+            SuspendedVideo(item, p?.let { (0 until it.mediaItemCount).map(it::getMediaItemAt) }.orEmpty(),
+                p?.currentMediaItemIndex ?: 0, p?.currentPosition ?: positionMs,
+                p?.playWhenReady ?: isPlaying)
+        }
+        loadJob?.cancel()
+        pendingStart = null
+        p?.pause()
         inShortsMode = true
         expanded = false
         fullscreen = false
+    }
+
+    /** Plays [item] inside the vertical Shorts feed (looping, no mini-player). */
+    fun openShort(item: VideoItem) {
+        val shortItem = item.copy(isShort = true)
+        enterShortsMode()
+        controller?.pause()
         controller?.repeatMode = Player.REPEAT_MODE_ONE
         if (current?.id == shortItem.id && error == null) {
             if (controller?.isPlaying == false) controller?.play()
@@ -168,12 +195,31 @@ class PlayerState(private val scope: CoroutineScope) {
         show(shortItem, startPlayback = true)
     }
 
-    /** Stops Shorts playback when leaving the Shorts tab so no mini-player is left behind. */
+    /** Restore the normal video, never leave a Short playing in a mini-player. */
     fun exitShortsMode() {
         if (!inShortsMode) return
-        inShortsMode = false
-        controller?.repeatMode = Player.REPEAT_MODE_OFF
+        val saved = suspendedVideo
+        suspendedVideo = null
         close()
+        if (saved != null) {
+            known[saved.item.id] = saved.item
+            show(saved.item, startPlayback = false)
+            val p = controller
+            if (p != null) {
+                swapping = true
+                try {
+                    val items = saved.items.ifEmpty { listOf(mediaItemFor(saved.item)) }
+                    p.setMediaItems(items, saved.index.coerceIn(0, items.lastIndex), saved.position.coerceAtLeast(0L))
+                    p.prepare()
+                    p.playWhenReady = saved.playWhenReady
+                } finally {
+                    swapping = false
+                }
+                rebuildQueue()
+            } else {
+                pendingStart = saved.item
+            }
+        }
     }
 
     /**
@@ -191,7 +237,10 @@ class PlayerState(private val scope: CoroutineScope) {
         details = null
         error = null
         firstFrameRendered = false
-        videoAspect = 16f / 9f
+        positionMs = 0L
+        bufferedMs = 0L
+        durationMs = item.durationSec.coerceAtLeast(0L) * 1000L
+        videoAspect = if (item.isShort) 9f / 16f else 16f / 9f
         aspectFromFrames = false
         decodedHeight = null
         playingFormat = null
@@ -234,10 +283,13 @@ class PlayerState(private val scope: CoroutineScope) {
                     else if (startPlayback) startPlayback(current!!)
                     // The likeliest next taps (up next, the queue head) extract in the background
                     // now, so they start without the extraction wait when the time comes.
-                    queue.firstOrNull()?.let { StreamCache.prefetch(it.id) }
-                    d.related.firstOrNull { !it.isShort && it.id != item.id }?.let { StreamCache.prefetch(it.id) }
+                    if (!inShortsMode) {
+                        queue.firstOrNull()?.let { StreamCache.prefetch(it.id) }
+                        d.related.firstOrNull { !it.isShort && it.id != item.id }?.let { StreamCache.prefetch(it.id) }
+                    }
                 }
                 .onFailure {
+                    if (it is CancellationException) throw it
                     Log.w(TAG, "details failed for ${item.id}", it)
                     error = YouTube.friendlyError(it)
                     // Comments wait for details; without this their spinner never stopped.
@@ -648,6 +700,8 @@ class PlayerState(private val scope: CoroutineScope) {
     }
 
     fun close() {
+        suspendedVideo = null
+        pendingStart = null
         loadJob?.cancel()
         captionsJob?.cancel()
         captionTrack = null
@@ -709,6 +763,7 @@ class PlayerState(private val scope: CoroutineScope) {
 
     internal fun syncFromPlayer() {
         val player = controller ?: return
+        if (player.currentMediaItem?.mediaId != current?.id) return
         isPlaying = player.isPlaying
         // While the service refetches refused links the player sits idle; show the spinner.
         isBuffering = player.playbackState == Player.STATE_BUFFERING || StreamRecovery.recovering == current?.id
@@ -716,6 +771,13 @@ class PlayerState(private val scope: CoroutineScope) {
         bufferedMs = player.bufferedPosition.coerceAtLeast(0L)
         durationMs = player.duration.takeIf { it > 0 } ?: ((current?.durationSec ?: 0L) * 1000L)
         speed = player.playbackParameters.speed
+    }
+
+    internal fun onVideoFrame() {
+        val p = controller ?: return
+        if (!loading && p.currentMediaItem?.mediaId == current?.id && p.playbackState == Player.STATE_READY) {
+            firstFrameRendered = true
+        }
     }
 
     internal val listener = object : Player.Listener {
@@ -736,7 +798,9 @@ class PlayerState(private val scope: CoroutineScope) {
 
         override fun onRenderedFirstFrame() {
             Log.i("ShinobiTime", "first frame +${android.os.SystemClock.elapsedRealtime() - openedAt}ms")
-            firstFrameRendered = true
+            // MediaController does not forward this on all Media3 versions. The texture
+            // update callback below is also used, and checks the currently requested id.
+            onVideoFrame()
         }
 
         override fun onPlayerError(e: PlaybackException) {

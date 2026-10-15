@@ -58,7 +58,11 @@ object Loc {
      */
     fun wrap(base: Context): Context {
         val locale = localeOf()
-        val config = Configuration(base.resources.configuration)
+        // Only override locale/layout direction. Copying the device configuration here pins
+        // orientation, screen dp and density to launch-time values in the wrapped context.
+        // With configChanges the window rotates, but Compose then still sees portrait and
+        // lays out a landscape-width portrait stage with its scrubber below the screen.
+        val config = Configuration()
         config.setLocale(locale)
         config.setLayoutDirection(locale)
         return base.createConfigurationContext(config)

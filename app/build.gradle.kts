@@ -13,10 +13,9 @@ android {
         minSdk = 26
         targetSdk = 36
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        // SHINOBI 1.8 IMPROVED (2026-10-14): bug-fix and performance pass — player fit,
-        // seek bars, quality switching, sensitive-content filter, low-RAM tuning.
-        versionCode = 12
-        versionName = "1.8"
+        // SHINOBI 1.9 IMPROVED: fullscreen configuration and Shorts surface ownership.
+        versionCode = 13
+        versionName = "1.9"
     }
 
     buildTypes {

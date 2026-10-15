@@ -205,9 +205,7 @@ fun ShinobiApp() {
     }
 
     LaunchedEffect(tab) {
-        if (tab != Tab.Shorts && player.inShortsMode) {
-            player.exitShortsMode()
-        }
+        if (tab == Tab.Shorts) player.enterShortsMode() else player.exitShortsMode()
     }
     // Home's silent previews step aside the moment a real video plays.
     SideEffect { FeedPreview.suppressed = { player.isPlaying } }
@@ -257,7 +255,7 @@ fun ShinobiApp() {
     // Fullscreen is whenever the open player is shown in landscape (rotation or button).
     val activity = LocalContext.current as Activity
     val orientation = rememberOrientationController(activity)
-    val playerOpen = player.current != null && player.expanded
+    val playerOpen = tab != Tab.Shorts && !player.inShortsMode && player.current != null && player.expanded
     // Audio only has no picture to go fullscreen with: the open player stays portrait.
     orientation.Bind(playerOpen && !AudioOnly.enabled)
     val pip = remember(activity) { PipController(activity as ComponentActivity) }
@@ -290,7 +288,7 @@ fun ShinobiApp() {
     }
     val showPlayer by remember {
         // Held until the morph has completely finished, so the video changes hands once.
-        derivedStateOf { player.current != null && (player.expanded || morph.dragging || morph.progress.isRunning || morph.progress.value > 0f) }
+        derivedStateOf { tab != Tab.Shorts && !player.inShortsMode && player.current != null && (player.expanded || morph.dragging || morph.progress.isRunning || morph.progress.value > 0f) }
     }
 
     BoxWithConstraints(Modifier.fillMaxSize().background(c.surface)) {
@@ -327,7 +325,16 @@ fun ShinobiApp() {
         // One video surface that moves between player, fullscreen and mini-player (never two
         // at once), so the picture is never rebuilt and never blinks back to the thumbnail.
         val sharedSurface = remember(player) {
-            androidx.compose.runtime.movableContentOf { m: Modifier -> VideoSurface(player.controller, m) }
+            androidx.compose.runtime.movableContentOf { m: Modifier ->
+                Box(m) {
+                    VideoSurface(player.controller, Modifier.fillMaxSize(), onFrame = player::onVideoFrame)
+                    if (!player.firstFrameRendered) {
+                        Box(Modifier.fillMaxSize().background(Color.Black)) {
+                            Thumbnail(player.current?.thumbnail, Modifier.fillMaxSize(), radius = 0)
+                        }
+                    }
+                }
+            }
         }
         CompositionLocalProvider(
             // In picture-in-picture only the PiP view below shows the video.
@@ -387,7 +394,7 @@ fun ShinobiApp() {
                     // Only the system bar's height: the video runs under where the tab bar
                     // would be, because the tab bar gets out of the way here.
                     bottomInset = navBottom.coerceAtLeast(8.dp),
-                    showSurface = !showPlayer && !showFullscreen && openChannel == null && openPlaylist == null,
+                    showSurface = tab == Tab.Shorts && !showPlayer && !showFullscreen && openChannel == null && openPlaylist == null,
                     onSearch = { tab = Tab.Search },
                 )
                 Tab.Subscriptions -> SubscriptionsScreen(
