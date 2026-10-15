@@ -113,6 +113,7 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.ensureActive
 
 /**
  * State for the vertical Shorts feed. Learns from [LocalHistory] so Shorts match the style
@@ -120,7 +121,12 @@ import kotlinx.coroutines.launch
  * Short tapped on the Home or Search screen.
  */
 @Stable
-class ShortsFeedState(private val scope: CoroutineScope) {
+class ShortsFeedState(
+    private val scope: CoroutineScope,
+    private val search: suspend (String, String?) -> SearchPage = InnerTube::searchPage,
+    private val fallbackSearch: suspend (String) -> List<VideoItem> = YouTube::search,
+    private val prefetch: (String) -> Unit = StreamCache::prefetch,
+) {
     var shorts by mutableStateOf<List<VideoItem>>(emptyList())
         private set
     var loading by mutableStateOf(false)
@@ -138,6 +144,8 @@ class ShortsFeedState(private val scope: CoroutineScope) {
     private var moreJob: Job? = null
     private var nextToken: Pair<String, String>? = null
     private var pageCounter = 0
+    private var requestGeneration = 0
+    private val maxItems = 300
     /** Set when a page adds nothing new, so the feed stops asking for more of the same. */
     private var exhausted = false
 
@@ -158,17 +166,27 @@ class ShortsFeedState(private val scope: CoroutineScope) {
 
     /** Opens the Shorts feed starting immediately at [initial], followed by [shelf]. */
     fun openWith(initial: VideoItem, shelf: List<VideoItem> = emptyList()) {
+        cancelRequests()
         val first = initial.copy(isShort = true)
-        val rest = shelf.filter { it.id != first.id }.map { it.copy(isShort = true) }
-        val existing = shorts.filter { s -> s.id != first.id && rest.none { it.id == s.id } }
-        shorts = listOf(first) + rest + existing
+        val seen = hashSetOf(first.id)
+        val rest = shelf.filter { it.id.isNotBlank() && seen.add(it.id) }.map { it.copy(isShort = true) }
+        val existing = shorts.filter { seen.add(it.id) }
+        shorts = (listOf(first) + rest + existing).take(maxItems)
+        nextToken = null
+        exhausted = shorts.size >= maxItems
         jumpIndex = 0
         jumpGeneration++
-        StreamCache.prefetch(first.id)
-        rest.take(2).forEach { StreamCache.prefetch(it.id) }
-        if (shorts.size < 8 && !loading) {
-            loadMore(seedItem = first)
-        }
+        prefetch(first.id)
+        rest.take(2).forEach { prefetch(it.id) }
+        if (shorts.size < 8) loadMore(seedItem = first)
+    }
+
+    private fun cancelRequests() {
+        requestGeneration++
+        job?.cancel(); moreJob?.cancel()
+        job = null; moreJob = null
+        loading = false
+        error = null
     }
 
     fun selectTopic(topic: String?) {
@@ -208,79 +226,77 @@ class ShortsFeedState(private val scope: CoroutineScope) {
     }
 
     private fun loadInitial() {
+        cancelRequests()
         loading = true
-        error = null
-        job?.cancel()
+        nextToken = null
+        val generation = requestGeneration
         val queries = buildQueries()
         job = scope.launch {
-            runCatching {
-                fetchShortsBatch(queries)
-            }.onSuccess { (items, next) ->
-                shorts = items
+            try {
+                val (items, next) = fetchShortsBatch(queries)
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (generation != requestGeneration) return@launch
+                shorts = items.take(maxItems)
                 nextToken = next
+                exhausted = shorts.size >= maxItems
                 jumpIndex = 0
                 jumpGeneration++
-                items.take(3).forEach { StreamCache.prefetch(it.id) }
-            }.onFailure {
-                error = YouTube.friendlyError(it)
-            }
-            loading = false
+                items.take(3).forEach { prefetch(it.id) }
+            } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+            catch (e: Exception) { if (generation == requestGeneration) error = YouTube.friendlyError(e) }
+            finally { if (generation == requestGeneration) loading = false }
         }
     }
 
     fun loadMore(seedItem: VideoItem? = null) {
-        if (loading || exhausted || moreJob?.isActive == true) return
+        if (loading || exhausted || moreJob?.isActive == true || shorts.size >= maxItems) return
+        val generation = requestGeneration
         val tokenPair = nextToken
         val queries = buildQueries(seedItem)
         moreJob = scope.launch {
-            runCatching {
-                coroutineScope {
-                    val fromContinuation = tokenPair?.let { (q, tok) ->
-                        async(Dispatchers.IO) {
-                            runCatching { InnerTube.searchPage(q, tok) }.getOrNull()?.let { q to it }
-                        }
+            try {
+                val (gathered, next) = coroutineScope {
+                    val continuation = tokenPair?.let { (q, token) -> async(Dispatchers.IO) { safeSearch(q, token)?.let { q to it } } }
+                    val freshQuery = queries.firstOrNull { it != tokenPair?.first }
+                        ?: fallbackTopics[(pageCounter++) % fallbackTopics.size]
+                    val fresh = async(Dispatchers.IO) { safeSearch(freshQuery, null)?.let { freshQuery to it } }
+                    val results = listOfNotNull(continuation?.await(), fresh.await())
+                    if (results.isEmpty()) throw java.io.IOException("Couldn't load Shorts")
+                    val items = results.flatMap { (_, page) ->
+                        page.shorts + page.videos.filter { it.isShort || it.durationSec in 1..60 }.map { it.copy(isShort = true) }
                     }
-                    val freshQuery = queries.firstOrNull { it != tokenPair?.first } ?: fallbackTopics[(pageCounter++) % fallbackTopics.size]
-                    val fromFresh = async(Dispatchers.IO) {
-                        runCatching { InnerTube.searchPage(freshQuery) }.getOrNull()?.let { freshQuery to it }
+                    val next = results.firstNotNullOfOrNull { (q, page) ->
+                        page.next?.takeUnless { tokenPair == (q to it) }?.let { q to it }
                     }
-                    val contRes = fromContinuation?.await()
-                    val freshRes = fromFresh.await()
-                    val gathered = buildList {
-                        contRes?.second?.let { p ->
-                            addAll(p.shorts)
-                            addAll(p.videos.filter { it.isShort || it.durationSec in 1..60 }.map { it.copy(isShort = true) })
-                        }
-                        freshRes?.second?.let { p ->
-                            addAll(p.shorts)
-                            addAll(p.videos.filter { it.isShort || it.durationSec in 1..60 }.map { it.copy(isShort = true) })
-                        }
-                    }
-                    nextToken = contRes?.second?.next?.let { contRes.first to it }
-                        ?: freshRes?.second?.next?.let { freshRes.first to it }
-                    val seen = shorts.mapTo(HashSet()) { it.id }
-                    val added = gathered.filter { it.id.isNotBlank() && it.id !in LocalHistory.dislikedIds && seen.add(it.id) }
-                    if (added.isNotEmpty()) {
-                        shorts = shorts + added
-                    } else if (gathered.isNotEmpty()) {
-                        // Everything the page offered was already on screen: this query is spent.
-                        exhausted = true
-                    } else {
-                        exhausted = true
-                    }
+                    items to next
                 }
-            }
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (generation != requestGeneration) return@launch
+                val seen = shorts.mapTo(HashSet()) { it.id }
+                val added = gathered.filter { it.id.isNotBlank() && it.id !in LocalHistory.dislikedIds && seen.add(it.id) }
+                shorts = (shorts + added).take(maxItems)
+                nextToken = next
+                exhausted = added.isEmpty() || shorts.size >= maxItems
+            } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+            catch (e: Exception) { if (generation == requestGeneration) error = YouTube.friendlyError(e) }
         }
     }
+
+    private suspend fun safeSearch(query: String, token: String?): SearchPage? = try {
+        search(query, token)
+    } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+    catch (_: Exception) { null }
 
     private suspend fun fetchShortsBatch(queries: List<String>): Pair<List<VideoItem>, Pair<String, String>?> = coroutineScope {
         val pages = queries.map { q ->
             async(Dispatchers.IO) {
-                val page = runCatching { InnerTube.searchPage(q) }.getOrNull()
+                val page = safeSearch(q, null)
                 val items = if (page != null && (page.shorts.isNotEmpty() || page.videos.isNotEmpty())) {
                     page.shorts + page.videos.filter { it.isShort || it.durationSec in 1..90 }.map { it.copy(isShort = true) }
                 } else {
-                    runCatching { YouTube.search(q) }.getOrDefault(emptyList())
+                    try { fallbackSearch(q) }
+                    catch (e: kotlinx.coroutines.CancellationException) { throw e }
+                    catch (_: Exception) { emptyList() }
                         .filter { it.isShort || it.durationSec in 1..90 }
                         .map { it.copy(isShort = true) }
                 }
