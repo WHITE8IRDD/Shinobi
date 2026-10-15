@@ -13,9 +13,9 @@ android {
         minSdk = 26
         targetSdk = 36
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        // SHINOBI 1.9 IMPROVED: fullscreen configuration and Shorts surface ownership.
-        versionCode = 13
-        versionName = "1.9"
+        // SHINOBI 2.0 candidate: safe seeking, isolated Shorts chrome, bounded playback work.
+        versionCode = 14
+        versionName = "2.0"
     }
 
     buildTypes {

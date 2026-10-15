@@ -129,7 +129,8 @@ fun VideoContent(
     var touchedAt by remember { mutableLongStateOf(0L) }
     var scrubPreview by remember(state.current?.id) { mutableStateOf<Long?>(null) }
     fun touched() { touchedAt = System.nanoTime() }
-    LaunchedEffect(controlsVisible, state.isPlaying, touchedAt, scrubPreview) {
+    val scrubbing = scrubPreview != null
+    LaunchedEffect(controlsVisible, state.isPlaying, touchedAt, scrubbing) {
         if (controlsVisible && state.isPlaying && scrubPreview == null) {
             delay(Motion.ControlsHideMs)
             controlsVisible = false
@@ -377,7 +378,7 @@ fun VideoContent(
                     PlayerScrubber(
                         state = state,
                         enabled = enabled,
-                        onPreview = { scrubPreview = it; touched() },
+                        onPreview = { if (scrubPreview == null) touched(); scrubPreview = it },
                         onSeek = { scrubPreview = null; state.seekTo(it); touched() },
                         onCancel = { scrubPreview = null; touched() },
                         // Fullscreen gets the YouTube-size slider: a taller drag target and a

@@ -130,7 +130,7 @@ class PlaybackService : MediaSessionService() {
         // Never crop: the picture is letterboxed into the surface and the surface is sized to
         // the video's aspect (see VideoSurface/aspectFit), so the whole frame is always shown.
         player.videoScalingMode = C.VIDEO_SCALING_MODE_SCALE_TO_FIT
-        player.addListener(SponsorSkipper(player))
+        sponsorSkipper = SponsorSkipper(player).also(player::addListener)
         player.addListener(SpeedKeeper(player))
         // Audio only is app-wide and kept; the UI applies it on connect, this covers a start
         // without one (e.g. resuming from the media notification).
@@ -140,7 +140,7 @@ class PlaybackService : MediaSessionService() {
                 .build()
         }
         // Before the session's own listener: the UI must see the recovery when the error reaches it.
-        player.addListener(StreamRecoverer(player, sources, resolver))
+        streamRecoverer = StreamRecoverer(player, sources, resolver).also(player::addListener)
         resumeSaver = ResumeSaver(player).also(player::addListener)
         watchTime = WatchTimeReporter(player).also(player::addListener)
         session = MediaSession.Builder(this, player)
@@ -165,18 +165,23 @@ class PlaybackService : MediaSessionService() {
         pauseAllPlayersAndStopSelf()
     }
 
+    private var sponsorSkipper: SponsorSkipper? = null
+    private var streamRecoverer: StreamRecoverer? = null
     private var resumeSaver: ResumeSaver? = null
     private var watchTime: WatchTimeReporter? = null
 
     override fun onDestroy() {
         resumeSaver?.saveNow()
-        watchTime?.finish()
+        watchTime?.close()
+        sponsorSkipper?.close()
+        streamRecoverer?.close()
+        resumeSaver?.close()
         session?.run {
             player.release()
             release()
         }
         session = null
-        resolver.shutdown()
+        resolver.shutdownNow()
         super.onDestroy()
     }
 
@@ -236,11 +241,19 @@ private class StreamRecoverer(
     private val resolver: java.util.concurrent.Executor,
 ) : Player.Listener {
     private val main = Handler(Looper.getMainLooper())
+    @Volatile private var closed = false
+
+    fun close() {
+        closed = true
+        main.removeCallbacksAndMessages(null)
+        StreamRecovery.recovering = null
+    }
+
     private var lastId: String? = null
     private var lastPositionMs = 0L
 
     override fun onPlayerError(error: PlaybackException) {
-        if (error.errorCode != PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS) return
+        if (closed || error.errorCode != PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS) return
         val item = player.currentMediaItem ?: return
         val id = item.mediaId
         val position = player.currentPosition
@@ -260,6 +273,7 @@ private class StreamRecoverer(
                 (sources as? YouTubeMediaSourceFactory)?.resolve(item) ?: item
             }
             main.post {
+                if (closed) return@post
                 StreamRecovery.recovering = null
                 // The user moved on (another video, Try again) while the links loaded.
                 if (player.currentMediaItem?.mediaId != id || player.playerError == null) return@post
@@ -302,6 +316,14 @@ private class StreamRecoverer(
 private class WatchTimeReporter(private val player: ExoPlayer) : Player.Listener {
     private val main = Handler(Looper.getMainLooper())
     private val io = Executors.newSingleThreadExecutor()
+    private var closed = false
+    fun close() {
+        finish()
+        closed = true
+        main.removeCallbacksAndMessages(null)
+        io.shutdown()
+    }
+
     private var videoId: String? = null
     private var session: InnerTube.WatchSession? = null
     private var startedAt = 0L
@@ -325,7 +347,7 @@ private class WatchTimeReporter(private val player: ExoPlayer) : Player.Listener
         io.execute {
             val started = runCatching { InnerTube.startWatch(id) }
                 .onFailure { Log.w("Shinobi", "watch start for $id", it) }.getOrNull()
-            main.post { if (videoId == id) session = started }
+            main.post { if (!closed && videoId == id) session = started }
         }
     }
 
@@ -442,6 +464,14 @@ private class SponsorSkipper(private val player: ExoPlayer) : Player.Listener {
     private val main = Handler(Looper.getMainLooper())
     private val io = Executors.newSingleThreadExecutor()
 
+    @Volatile private var closed = false
+    fun close() {
+        closed = true
+        rampGeneration++
+        main.removeCallbacksAndMessages(null)
+        io.shutdownNow()
+    }
+
     /** Where playback was on the previous watch tick; TIME_UNSET when it just (re)started. */
     private var lastPositionMs = C.TIME_UNSET
     private var watching = false
@@ -457,6 +487,7 @@ private class SponsorSkipper(private val player: ExoPlayer) : Player.Listener {
         io.execute {
             val segments = SponsorBlock.fetch(id)
             main.post {
+                if (closed) return@post
                 SponsorBlock.forUi[id] = segments
                 // Still the same item? (The user may have moved on during the lookup.)
                 if (player.currentMediaItem?.mediaId != id) return@post
@@ -475,7 +506,7 @@ private class SponsorSkipper(private val player: ExoPlayer) : Player.Listener {
     }
 
     private fun startWatching(delayMs: Long) {
-        if (watching) return
+        if (closed || watching) return
         watching = true
         main.postDelayed(watch, delayMs)
     }
@@ -483,6 +514,7 @@ private class SponsorSkipper(private val player: ExoPlayer) : Player.Listener {
     private val watch = object : Runnable {
         override fun run() {
             watching = false
+            if (closed) return
             // No item open (player idle, playback stopped): stop ticking until the next one.
             val id = player.currentMediaItem?.mediaId?.takeIf { it.isNotBlank() } ?: return
             val playing = player.isPlaying
@@ -507,7 +539,7 @@ private class SponsorSkipper(private val player: ExoPlayer) : Player.Listener {
     /** Blocking-free: everything here already runs on the main thread. */
     private fun skip(videoId: String, segment: SponsorBlock.Segment) {
         // Settings are read at the moment of the skip, so changing them applies immediately.
-        if (!SponsorBlock.enabled || segment.action != SponsorBlock.Action.Auto) return
+        if (closed || !SponsorBlock.enabled || segment.action != SponsorBlock.Action.Auto) return
         if (SponsorBlock.isSpent(segment)) return
         if (player.currentMediaItem?.mediaId != videoId) return
         val position = player.currentPosition
