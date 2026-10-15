@@ -1,0 +1,31 @@
+name: Probe
+
+on:
+  push:
+    branches: [main, "arena/**"]
+  workflow_dispatch:
+    inputs:
+      country:
+        description: "Country code to probe the trending routes for"
+        required: false
+        default: "MA"
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Which public route still carries a country's real trending list. The answer is
+      # printed as workflow annotations, which the Checks API can read.
+      - name: Probe the regional trending routes
+        run: python3 .github/scripts/probe_trending.py "${{ github.event.inputs.country || 'MA' }}"
