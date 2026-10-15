@@ -70,6 +70,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
@@ -484,12 +485,8 @@ fun ShortsScreen(
 
     LaunchedEffect(Unit) { state.ensureLoaded() }
 
-    // Leave Shorts playback mode when ShortsScreen leaves composition.
-    DisposableEffect(Unit) {
-        onDispose {
-            if (player.inShortsMode) player.exitShortsMode()
-        }
-    }
+    // Playback ownership follows the selected tab in ShinobiApp, not disposal: the
+    // outgoing AnimatedContent remains composed briefly and must not stop a restored video.
 
     val shorts = state.shorts
     val pagerState = rememberPagerState(
@@ -504,21 +501,24 @@ fun ShortsScreen(
         }
     }
 
-    // Play the active Short and prefetch the next two pages.
-    val currentShort = shorts.getOrNull(pagerState.currentPage)
-    LaunchedEffect(currentShort?.id, showSurface) {
-        if (currentShort != null && showSurface) {
-            commentsOpenFor = null
-            player.openShort(currentShort)
-            shorts.getOrNull(pagerState.currentPage + 1)?.let { StreamCache.prefetch(it.id) }
-            shorts.getOrNull(pagerState.currentPage + 2)?.let { StreamCache.prefetch(it.id) }
-        }
-    }
-
-    // Load more Shorts as the user swipes near the end of the feed.
-    LaunchedEffect(pagerState.currentPage, shorts.size) {
-        if (shorts.isNotEmpty() && pagerState.currentPage >= shorts.size - 3) {
-            state.loadMore(seedItem = currentShort)
+    // Keep the texture on the settled page for the whole swipe. currentPage changes at
+    // the halfway point and used to reparent the retained (old) frame into the next page.
+    // snapshotFlow avoids restarting playback/extraction on every drag position update.
+    val currentShort = shorts.getOrNull(pagerState.settledPage)
+    LaunchedEffect(pagerState, shorts, showSurface) {
+        if (!showSurface) return@LaunchedEffect
+        snapshotFlow { pagerState.settledPage }.collect { page ->
+            shorts.getOrNull(page)?.let { item ->
+                // Appending a prefetched batch restarts this effect, not the user's
+                // playback intent. Never unpause the same Short on a feed-list update.
+                if (!player.inShortsMode || player.current?.id != item.id || player.error != null) {
+                    commentsOpenFor = null
+                    player.openShort(item)
+                }
+                shorts.getOrNull(page + 1)?.let { StreamCache.prefetch(it.id) }
+                shorts.getOrNull(page + 2)?.let { StreamCache.prefetch(it.id) }
+                if (page >= shorts.size - 3) state.loadMore(seedItem = item)
+            }
         }
     }
 
@@ -577,10 +577,10 @@ fun ShortsScreen(
                     state = pagerState,
                     beyondViewportPageCount = 1,
                     key = { index -> shorts.getOrNull(index)?.id ?: index },
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier.fillMaxSize().clipToBounds(),
                 ) { page ->
                     val item = shorts.getOrNull(page) ?: return@VerticalPager
-                    val isActivePage = page == pagerState.currentPage && showSurface
+                    val isActivePage = page == pagerState.settledPage && showSurface
                     ShortPageContent(
                         item = item,
                         player = player,
@@ -795,7 +795,7 @@ private fun ShortsTopicChip(
 }
 
 @Composable
-private fun ShortPageContent(
+internal fun ShortPageContent(
     item: VideoItem,
     player: PlayerState,
     isActivePage: Boolean,
@@ -849,6 +849,7 @@ private fun ShortPageContent(
     Box(
         modifier = Modifier
             .fillMaxSize()
+            .clipToBounds() // cover-scaled tall videos must never draw across page boundaries
             .background(Color(0xFF0B090A))
             .pointerInput(item.id, isActivePage) {
                 detectTapGestures(
@@ -893,6 +894,14 @@ private fun ShortPageContent(
                     .clipToBounds(),
             ) {
                 LocalVideoSurface.current(Modifier.fillMaxSize())
+            }
+        }
+
+        // The retained texture still contains the previous media item's last frame during
+        // extraction/prepare. Cover it until THIS item's first decoded texture update.
+        if (isActivePage && (player.current?.id != item.id || !player.firstFrameRendered)) {
+            Box(Modifier.fillMaxSize().background(ShortsBackdrop)) {
+                Thumbnail(thumbUrl, Modifier.fillMaxSize(), radius = 0, blur = SensitiveFilter.shouldBlur(resolvedItem))
             }
         }
 

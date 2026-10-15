@@ -69,6 +69,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.setProgress
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
@@ -122,9 +127,10 @@ fun VideoContent(
     // rotating in or out of fullscreen never pop the controls up.
     var controlsVisible by remember { mutableStateOf(false) }
     var touchedAt by remember { mutableLongStateOf(0L) }
+    var scrubPreview by remember(state.current?.id) { mutableStateOf<Long?>(null) }
     fun touched() { touchedAt = System.nanoTime() }
-    LaunchedEffect(controlsVisible, state.isPlaying, touchedAt) {
-        if (controlsVisible && state.isPlaying) {
+    LaunchedEffect(controlsVisible, state.isPlaying, touchedAt, scrubPreview) {
+        if (controlsVisible && state.isPlaying && scrubPreview == null) {
             delay(Motion.ControlsHideMs)
             controlsVisible = false
         }
@@ -208,6 +214,7 @@ fun VideoContent(
                 // the video's shape, so bars appear only past its limits (and in fullscreen).
                 .fillMaxSize()
                 .aspectFit(state.videoAspect)
+                .testTag("fitted-video")
                 .clipToBounds(),
         ) {
             Box(
@@ -272,7 +279,7 @@ fun VideoContent(
                     .windowInsetsPadding(WindowInsets.mandatorySystemGestures)
                     .padding(horizontal = 12.dp, vertical = 8.dp)
             } else Modifier
-            Box(Modifier.fillMaxSize().then(edge)) {
+            Box(Modifier.fillMaxSize().then(edge).testTag("player-safe-controls")) {
                 // Top row: minimize / exit fullscreen, title (fullscreen), quality.
                 Row(
                     Modifier.align(Alignment.TopStart).fillMaxWidth().padding(10.dp),
@@ -338,7 +345,10 @@ fun VideoContent(
                     }
                 }
                 Column(Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(start = 14.dp, end = 8.dp, bottom = 6.dp)) {
-                    var scrubPreview by remember { mutableStateOf<Long?>(null) }
+                    if (fullscreen && scrubPreview != null) {
+                        SeekThumbnail(state.details?.storyboard, state.current?.thumbnail, scrubPreview!!,
+                            Modifier.align(Alignment.CenterHorizontally).padding(bottom = 8.dp))
+                    }
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         ElapsedText(state, scrubPreview, Color.White, 12.sp, FontWeight.Bold)
                         Text(
@@ -373,6 +383,7 @@ fun VideoContent(
                         enabled = enabled,
                         onPreview = { scrubPreview = it; touched() },
                         onSeek = { scrubPreview = null; state.seekTo(it); touched() },
+                        onCancel = { scrubPreview = null; touched() },
                         // Fullscreen gets the YouTube-size slider: a taller drag target and a
                         // thicker track, still fully inside the edge-safe box around this row.
                         trackHeight = if (fullscreen) 5.dp else 4.dp,
@@ -809,7 +820,7 @@ fun MorphPlayButton(
  * passes its own colors and sizes.
  */
 @Composable
-private fun Scrubber(
+internal fun Scrubber(
     segments: List<SponsorBlock.Segment>,
     positionMs: Long,
     bufferedMs: Long,
@@ -825,13 +836,20 @@ private fun Scrubber(
     knobDragging: Dp = 9.dp,
     touchHeight: Dp = 24.dp,
     bubble: Boolean = true,
+    onCancel: () -> Unit = {},
 ) {
     var dragFraction by remember { mutableStateOf<Float?>(null) }
     val duration = durationMs.coerceAtLeast(1L)
     val playedFraction = dragFraction ?: (positionMs.toFloat() / duration).coerceIn(0f, 1f)
     val bufferedFraction = (bufferedMs.toFloat() / duration).coerceIn(0f, 1f)
     val knobRadius by animateDpAsState(if (dragFraction != null) knobDragging else knob, label = "knob")
-    Box(Modifier.fillMaxWidth().height(touchHeight)) {
+    Box(Modifier.fillMaxWidth().height(touchHeight).testTag("player-scrubber").semantics {
+        progressBarRangeInfo = ProgressBarRangeInfo(playedFraction, 0f..1f)
+        if (enabled && durationMs > 0) setProgress { fraction ->
+            onSeek((fraction.coerceIn(0f, 1f) * durationMs).toLong())
+            true
+        }
+    }) {
         Canvas(
             modifier = Modifier
                 .fillMaxSize()
@@ -850,7 +868,7 @@ private fun Scrubber(
                             dragFraction?.let { onSeek((it * durationMs).toLong()) }
                             dragFraction = null
                         },
-                        onDragCancel = { dragFraction = null },
+                        onDragCancel = { dragFraction = null; onCancel() },
                     ) { change, _ ->
                         change.consume()
                         dragFraction = (change.position.x / size.width).coerceIn(0f, 1f)
@@ -957,6 +975,7 @@ private fun PlayerScrubber(
     knob: Dp = 7.dp,
     knobDragging: Dp = 9.dp,
     touchHeight: Dp = 24.dp,
+    onCancel: () -> Unit = {},
 ) {
     Scrubber(
         segments = if (SponsorBlock.enabled) state.segments.filter { it.action != SponsorBlock.Action.Off } else emptyList(),
@@ -973,5 +992,6 @@ private fun PlayerScrubber(
         knob = knob,
         knobDragging = knobDragging,
         touchHeight = touchHeight,
+        onCancel = onCancel,
     )
 }

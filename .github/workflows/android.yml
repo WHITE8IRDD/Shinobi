@@ -200,8 +200,8 @@ jobs:
 
   # Publishing is explicit and always follows a passing build: pushing a draft-*/v* tag, or
   # running this workflow manually with a tag and a name, attaches the APKs built by the job
-  # above to a GitHub release. The explicit, branch-scoped 1.3 publication commit also
-  # supports connections with repository push permission but no Actions dispatch permission.
+  # above to a GitHub release. Explicit, branch-scoped publication commits also support
+  # connections without Actions dispatch/artifact-download access.
   # Ordinary pushes (including later work on that branch) must NEVER publish a release.
   release:
     if: >-
@@ -209,7 +209,10 @@ jobs:
       (github.event_name == 'workflow_dispatch' && inputs.tag != '') ||
       (github.event_name == 'push' &&
        github.ref == 'refs/heads/arena/e9eca407-shinobi' &&
-       startsWith(github.event.head_commit.message, 'release: publish SHINOBI 1.3'))
+       startsWith(github.event.head_commit.message, 'release: publish SHINOBI 1.3')) ||
+      (github.event_name == 'push' &&
+       github.ref == 'refs/heads/arena/7d8da2e3-shinobi' &&
+       startsWith(github.event.head_commit.message, 'release: publish SHINOBI 1.9 IMPROVED'))
     needs: [build, layout-tests]
     runs-on: ubuntu-latest
     permissions:
@@ -229,10 +232,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          TAG: ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag || 'v1.3' }}
+          TAG: ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag || (github.ref == 'refs/heads/arena/7d8da2e3-shinobi' && 'v1.9-improved') || 'v1.3' }}
           NAME: ${{ github.ref_type == 'tag' && '' || inputs.name }}
           SHA: ${{ github.sha }}
           REF_TYPE: ${{ github.ref_type }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -o pipefail
           {
@@ -273,14 +277,23 @@ jobs:
             fi
 
             mkdir -p publish
-            cp "$RELEASE_APK" "publish/Shinobi-${FILE_SLUG}-release.apk"
-            cp "$DEBUG_APK" "publish/Shinobi-${FILE_SLUG}-debug.apk"
+            RELEASE_FILENAME="Shinobi-${FILE_SLUG}-release.apk"
+            DEBUG_FILENAME="Shinobi-${FILE_SLUG}-debug.apk"
+            if [[ "$NAME" == "SHINOBI 1.9 IMPROVED" ]]; then
+              RELEASE_FILENAME="SHINOBI 1.9 IMPROVED.apk"
+              DEBUG_FILENAME="SHINOBI 1.9 IMPROVED-debug.apk"
+            fi
+            cp "$RELEASE_APK" "publish/$RELEASE_FILENAME"
+            cp "$DEBUG_APK" "publish/$DEBUG_FILENAME"
+            (cd publish && sha256sum *.apk) > publish/SHA256SUMS.txt
+            assets=(publish/*.apk publish/SHA256SUMS.txt)
             ls -l publish
 
             {
-              printf 'Built from the source at this tag by GitHub Actions, with unit tests and both\n'
-              printf 'zero-ads guards passing in the same run.\n\n'
-              printf '**Install (sideload):** download `Shinobi-%s-release.apk`, open it on your phone.\n' "$FILE_SLUG"
+              printf 'Built from the source at this tag by GitHub Actions, with unit tests, emulator\n'
+              printf 'regressions and both zero-ads guards passing in the same run.\n\n'
+              printf '**Source:** `%s` · **Verification:** %s\n\n' "$SHA" "$RUN_URL"
+              printf '**Install (sideload):** download `%s`, open it on your phone.\n' "$RELEASE_FILENAME"
               printf 'Allow installing from this source when Android asks. Android 8.0 (API 26) or newer is required.\n'
               printf 'The release APK is signed with the Android Gradle debug signing configuration in `app/build.gradle.kts`.\n'
               printf 'For a first install, sideload normally; to update a copy signed with a different key, uninstall it first.\n\n'
@@ -301,9 +314,9 @@ jobs:
             if gh release view "$TAG" >/dev/null 2>&1; then
               echo "Release $TAG already exists; updating its title, notes, and APKs."
               gh release edit "$TAG" --title "$NAME" --notes-file notes.md
-              gh release upload "$TAG" publish/*.apk --clobber
+              gh release upload "$TAG" "${assets[@]}" --clobber
             else
-              gh release create "$TAG" "${release_args[@]}" publish/*.apk
+              gh release create "$TAG" "${release_args[@]}" "${assets[@]}"
             fi
 
             echo "--- published release ---"

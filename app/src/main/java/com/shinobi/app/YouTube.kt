@@ -83,6 +83,7 @@ data class VideoDetails(
     val aspect: Float? = null,
     /** Available caption tracks, ordered with human-created tracks before auto captions. */
     val captions: List<CaptionTrack> = emptyList(),
+    val storyboard: SeekStoryboard? = null,
 )
 
 @Immutable
@@ -199,6 +200,11 @@ object YouTube {
             quality = picked.playedHeight?.let { "${it}p" },
             qualities = StreamSelection.heights(info),
             aspect = aspect,
+            storyboard = info.previewFrames.orEmpty()
+                .filter { it.frameWidth > 0 && it.frameHeight > 0 && it.durationPerFrame > 0 && it.totalCount > 0 }
+                .minByOrNull { kotlin.math.abs(it.frameWidth - 160) }
+                ?.let { SeekStoryboard(it.urls, it.frameWidth, it.frameHeight, it.totalCount,
+                    it.durationPerFrame, it.framesPerPageX, it.framesPerPageY) },
             captions = info.subtitles
                 .asSequence()
                 .filter { it.isUrl && it.content.startsWith("https://", ignoreCase = true) }
