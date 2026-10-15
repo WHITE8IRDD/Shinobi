@@ -3,8 +3,8 @@
 YouTube retired the combined Trending page (21 July 2025): browseId "FEtrending" answers
 HTTP 400. The per-category charts (YouTube Charts) only exist for the countries YouTube
 Charts publishes, which does not include Morocco. This probe finds out, for the country
-asked for, which public route still carries the country's real trending list, so the app
-can use a route that actually works instead of the one that used to.
+asked for, whether the original combined feed still responds and which explicitly labelled
+category routes remain. Search results must never masquerade as a Trending chart.
 
 The result is written to a report file that the workflow commits to the branch, so the
 whole answer is readable without downloading a log.
@@ -133,8 +133,6 @@ say("## Retired general Trending feed (browseId FEtrending)")
 for name, params in [
     ("now", ""),
     ("videos", "4gIOGgxtb3N0X3BvcHVsYXI%3D"),
-    ("charts-all", "4gINGgt5dG1hX2NoYXJ0cw%3D%3D"),
-    ("charts-music", "4gIuCggvbS8wNHJsZhIiU%3D%3D"),
 ]:
     query = {"browseId": "FEtrending"}
     if params:
@@ -149,30 +147,6 @@ report("gaming", lambda: post("browse", {"browseId": "UCOpNcN46UbXVtpKMrmU4Abg",
 report("explore", lambda: post("browse", {"browseId": "FEexplore"}))
 report("home", lambda: post("browse", {"browseId": "FEwhat_to_watch"}))
 report("charts-home", lambda: post("browse", {"browseId": "FEmusic_analytics_charts_home", "query": "perspective=CHART_DETAILS&chart_params_country_code=" + COUNTRY + "&chart_params_chart_type=TRENDING_VIDEOS"}))
-
-say("")
-say("## Search filters (which one means 'this week, most watched'?)")
-for name, params in [
-    ("plain", ""),
-    ("sort-upload-date", "CAI%3D"),
-    ("week", "EgQIBRAB"),
-    ("month", "CAMSAhAB"),
-    ("year", "CAISAhAB"),
-    ("today", "EgIIAQ%3D%3D"),
-]:
-    body = {"query": "news"}
-    if params:
-        body["params"] = params
-    report(f"search/{name}", lambda body=body: post("search", body))
-
-say("")
-say("## The route the app will use: most-watched of the last week, per topic")
-for query in ["news", "viral", "music", "football"]:
-    for name, params in [("view+week", "CAISAhAB"), ("view+month", "CAMSAhAB")]:
-        body = {"query": query}
-        if params:
-            body["params"] = params
-        report(f"search/{query}/{name}", lambda body=body: post("search", body))
 
 say("")
 say("## The old HTML routes, for reference")

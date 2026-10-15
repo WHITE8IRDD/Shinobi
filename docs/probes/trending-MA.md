@@ -1,6 +1,9 @@
 # Regional trending probe — MA
 
-Which public route still carries this country's trending list.
+Captured by GitHub Actions on 2026-10-15. The general feed returns HTTP 400;
+category feeds still respond. Search candidates below are NOT a country chart and
+some experimental parameter labels were incorrect. They are raw diagnostic data,
+not a proposed fallback: the app does not use these searches as Trending.
 
 ## Retired general Trending feed (browseId FEtrending)
 - **WEB now**: HTTP 400
@@ -29,7 +32,7 @@ Which public route still carries this country's trending list.
 - **home**: 0 videos
 - **charts-home**: HTTP 400
 
-## Search filters (which one means 'this week, most watched'?)
+## Experimental search filters (unverified; not used by the app)
 - **search/plain**: 25 videos
     - `pUeQResXPNI` ABC World News Tonight with David Muir Full Broadcast - Oct. | views='273,213 views' published='5 hours ago'
     - `cNLfEWX77H0` NBC Nightly News with Tom Llamas Full Episode - Oct. 14 | views='211,794 views' published='8 hours ago'
@@ -67,7 +70,7 @@ Which public route still carries this country's trending list.
     - `ET4Af-VYaMY` Questions over WH press secy. Zacharia's claim she's a lawye | views='442,319 views' published='8 hours ago'
     - `FvJEAZ99Ot8` CAUGHT ON CAMERA: Man seen poisoning co-worker seeks to eras | views='78,473 views' published='1 day ago'
 
-## The route the app will use: most-watched of the last week, per topic
+## Rejected search candidates: these are NOT regional Trending
 - **search/news/view+week**: 27 videos
     - `pUeQResXPNI` ABC World News Tonight with David Muir Full Broadcast - Oct. | views='273,213 views' published='5 hours ago'
     - `cNLfEWX77H0` NBC Nightly News with Tom Llamas Full Episode - Oct. 14 | views='211,794 views' published='8 hours ago'

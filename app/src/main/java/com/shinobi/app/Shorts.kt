@@ -462,24 +462,10 @@ private fun ShortShelfCard(short: VideoItem, onClick: () -> Unit) {
  */
 val ShortsBackdrop = Color(0xFF0B090B)
 
-/**
- * Focus state for the Shorts tab, shared with the app shell: while a Short plays, the screen
- * belongs to the video — the floating tab bar leaves with the rest of the controls, exactly as
- * it does in YouTube's Shorts (product owner, 2026-10-14).
- */
-@Stable
-class ShortsFocusState {
-    /** Overlay controls (header, chips, action rail, title) are on screen. */
-    var chromeVisible by mutableStateOf(true)
-    /** True while the Shorts tab owns the screen, so the shell can hide the tab bar. */
-    var engaged by mutableStateOf(false)
-}
-
 @Composable
 fun ShortsScreen(
     state: ShortsFeedState,
     player: PlayerState,
-    focus: ShortsFocusState,
     bottomInset: Dp,
     showSurface: Boolean,
     onSearch: () -> Unit,
@@ -531,8 +517,6 @@ fun ShortsScreen(
 
     // Shorts owns its chrome. Never fade in the main app's floating navigation over
     // a Short; the shell reserves a separate bottom navigation row outside this viewport.
-    SideEffect { focus.engaged = showSurface; focus.chromeVisible = true }
-    DisposableEffect(Unit) { onDispose { focus.engaged = false } }
     val chrome = true
 
     Box(
@@ -586,7 +570,7 @@ fun ShortsScreen(
                                 .putExtra(Intent.EXTRA_SUBJECT, item.title)
                             context.startActivity(Intent.createChooser(send, null))
                         },
-                        onUserTap = { focus.chromeVisible = true },
+                        onUserTap = {},
                     )
                 }
             }
@@ -680,46 +664,6 @@ private fun ShortsMessage(
         ) {
             Text(actionLabel, color = c.onPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
         }
-    }
-}
-
-@Composable
-private fun ShortsTopicChip(
-    label: String,
-    selected: Boolean,
-    icon: ImageVector? = null,
-    onClick: () -> Unit,
-) {
-    val c = MaterialTheme.colorScheme
-    Row(
-        modifier = Modifier
-            .pressable(onClick = onClick)
-            .clip(CircleShape)
-            .background(if (selected) c.primary else Color.Black.copy(alpha = 0.48f))
-            .border(
-                width = 1.dp,
-                color = if (selected) c.primary else Color.White.copy(alpha = 0.22f),
-                shape = CircleShape,
-            )
-            .padding(horizontal = 13.dp, vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        if (icon != null) {
-            Icon(
-                icon,
-                contentDescription = null,
-                tint = if (selected) c.onPrimary else Color.White,
-                modifier = Modifier.size(14.dp),
-            )
-            Spacer(Modifier.width(5.dp))
-        }
-        Text(
-            label,
-            color = if (selected) c.onPrimary else Color.White,
-            fontSize = 12.5.sp,
-            fontWeight = FontWeight.Bold,
-            maxLines = 1,
-        )
     }
 }
 
@@ -892,8 +836,7 @@ internal fun ShortPageContent(
             )
         }
 
-        // Right-side vertical action rail. In focus mode it is gone entirely (not merely
-        // transparent), so nothing invisible can swallow a tap meant for the video.
+        // Persistent, physically right-aligned action rail, separate from metadata and seeking.
         AnimatedVisibility(
             visible = chromeVisible || !isActivePage,
             enter = fadeIn(tween(180)) + scaleIn(initialScale = 0.94f),

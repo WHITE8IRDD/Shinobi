@@ -10,8 +10,6 @@ import androidx.compose.runtime.setValue
  * Playback and feed behaviour the user can change, persisted:
  *  - [mixShortsInFeed]: "For you" mixes Shorts in with long videos instead of boxing them
  *    into their own shelf (product owner, 2026-10-14);
- *  - [shortsAutoHide]: the Shorts player hides every control while a Short plays, so the
- *    video has the screen to itself, and a tap brings the controls back;
  *  - [trendingRegionChoice]: the country of the trending charts, automatic (where the phone
  *    is, see [Region]) unless the user picks one;
  *  - [feedPreviews]: whether Home plays silent previews of the card in view.
@@ -19,7 +17,6 @@ import androidx.compose.runtime.setValue
 object AppSettings {
     private const val PREFS = "app_settings"
     private const val KEY_MIX_SHORTS = "mix_shorts_in_feed"
-    private const val KEY_SHORTS_AUTOHIDE = "shorts_autohide"
     private const val KEY_TRENDING_REGION = "trending_region"
     private const val KEY_FEED_PREVIEWS = "feed_previews"
     private const val KEY_BLUR_SENSITIVE = "blur_sensitive_thumbnails"
@@ -28,7 +25,6 @@ object AppSettings {
     private var prefs: SharedPreferences? = null
 
     private var mixState by mutableStateOf(true)
-    private var autoHideState by mutableStateOf(true)
     private var previewsState by mutableStateOf(FeedPreview.ALWAYS)
     private var blurSensitiveState by mutableStateOf(true)
 
@@ -54,15 +50,6 @@ object AppSettings {
             if (mixState == value) return
             mixState = value
             prefs?.edit()?.putBoolean(KEY_MIX_SHORTS, value)?.apply()
-        }
-
-    /** Hide the Shorts overlay while playing (tap to reveal). On by default. */
-    var shortsAutoHide: Boolean
-        get() = autoHideState
-        set(value) {
-            if (autoHideState == value) return
-            autoHideState = value
-            prefs?.edit()?.putBoolean(KEY_SHORTS_AUTOHIDE, value)?.apply()
         }
 
     /**
@@ -121,7 +108,6 @@ object AppSettings {
             ?: p.getString("trending_country", null)?.takeIf { it != "US" }?.let { Region.normalize(it) }
             ?: AUTO_REGION
         mixState = p.getBoolean(KEY_MIX_SHORTS, true)
-        autoHideState = p.getBoolean(KEY_SHORTS_AUTOHIDE, true)
         // Low-RAM phones (2–3 GB) start with Home previews off — they keep a second decoder
         // warm — and can still turn them on explicitly.
         previewsState = p.getString(KEY_FEED_PREVIEWS, null)?.takeIf { it == FeedPreview.ALWAYS || it == FeedPreview.WIFI || it == FeedPreview.OFF }

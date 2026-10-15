@@ -191,8 +191,6 @@ fun ShinobiApp() {
     val scrollToTop = remember { mutableStateMapOf<Tab, Int>() }
     val reduced = rememberReducedMotion()
     val morph = remember { PlayerMorph(scope) { expanded -> player.expanded = expanded } }
-    // Shorts owns the whole screen while a Short plays (see ShortsFocusState).
-    val shortsFocus = remember { ShortsFocusState() }
 
     fun openShortItem(item: VideoItem, shelf: List<VideoItem> = emptyList()) {
         openPlaylist = null
@@ -397,7 +395,6 @@ fun ShinobiApp() {
                 ShortsScreen(
                     state = shortsFeed,
                     player = player,
-                    focus = shortsFocus,
                     // Only the system bar's height: the video runs under where the tab bar
                     // would be, because the tab bar gets out of the way here.
                     bottomInset = 0.dp,

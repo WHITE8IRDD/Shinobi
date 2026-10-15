@@ -248,6 +248,7 @@ object InnerTube {
     internal suspend fun readPost(
         endpoint: String, body: JSONObject, anonymous: Boolean = !Account.signedIn,
         country: String = "US", publicRead: Boolean = true, mobileFirst: Boolean = false,
+        attempts: Int = 3,
         transport: suspend (Request) -> String = { request ->
             Net.apiClient.newCall(request).awaitText { response ->
                 if (request.header("Cookie") != null) Account.absorbSetCookies(response.headers("Set-Cookie"))
@@ -259,7 +260,7 @@ object InnerTube {
         val pinnedMobile = publicRead && token.startsWith(MOBILE_TOKEN)
         val payload = JSONObject(body.toString())
         if (pinnedMobile) payload.put("continuation", token.removePrefix(MOBILE_TOKEN))
-        return ReadRecovery.run { attempt ->
+        return ReadRecovery.run(attempts = attempts) { attempt ->
             val mobile = if (continuation) pinnedMobile else publicRead && (mobileFirst || attempt > 0)
             val guest = anonymous || mobile
             val text = transport(request(endpoint, JSONObject(payload.toString()), guest, country, mobile))
@@ -290,7 +291,7 @@ object InnerTube {
     suspend fun regionalTrending(country: String): List<VideoItem> = withContext(Dispatchers.IO) {
         try {
             val root = readPost("browse", JSONObject().put("browseId", "FEtrending")
-                .put("params", "4gIOGgxtb3N0X3BvcHVsYXI%3D"), anonymous = true, country = country)
+                .put("params", "4gIOGgxtb3N0X3BvcHVsYXI%3D"), anonymous = true, country = country, attempts = 1)
             val tabs = root.optJSONObject("contents")?.optJSONObject("twoColumnBrowseResultsRenderer")
                 ?.optJSONArray("tabs") ?: return@withContext emptyList()
             val selected = (0 until tabs.length()).mapNotNull { tabs.optJSONObject(it)?.optJSONObject("tabRenderer") }
