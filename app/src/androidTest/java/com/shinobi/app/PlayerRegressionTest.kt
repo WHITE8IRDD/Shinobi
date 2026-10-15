@@ -69,13 +69,14 @@ class PlayerRegressionTest {
         compose.waitUntil(10000) { observed == Configuration.ORIENTATION_PORTRAIT }
     }
 
-    @Test fun decodedVideoShowsAllFourEdgesInLandscapeFitMode() {
+    @Test fun decodedVideoShowsAllFourEdgesAfterMovingFromPortraitToLandscape() {
+        var observed = Configuration.ORIENTATION_UNDEFINED
         lateinit var backend: ExoPlayer
         lateinit var session: MediaSession
         lateinit var future: ListenableFuture<MediaController>
         lateinit var state: PlayerState
         compose.runOnIdle {
-            compose.activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+            compose.activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
             backend = ExoPlayer.Builder(compose.activity).build()
             backend.setMediaItem(MediaItem.Builder().setMediaId("offline-fit").setUri("asset:///player-fit.mp4").build())
             backend.repeatMode = androidx.media3.common.Player.REPEAT_MODE_ONE
@@ -91,14 +92,28 @@ class PlayerRegressionTest {
                 controller.addListener(state.listener)
             }
             compose.setContent {
-                MaterialTheme {
-                    CompositionLocalProvider(LocalVideoSurface provides { modifier ->
+                observed = LocalConfiguration.current.orientation
+                val shared = remember {
+                    androidx.compose.runtime.movableContentOf { modifier: Modifier ->
                         VideoSurface(controller, modifier, onFrame = state::onVideoFrame)
-                    }) { FullscreenPlayer(state, {}) }
+                    }
+                }
+                MaterialTheme {
+                    CompositionLocalProvider(LocalVideoSurface provides shared) {
+                        Box(Modifier.fillMaxSize()) {
+                            if (observed == Configuration.ORIENTATION_LANDSCAPE) FullscreenPlayer(state, {})
+                            else VideoContent(state, false, {}, {}, Modifier.fillMaxWidth().aspectRatio(4f / 3f))
+                        }
+                    }
                 }
             }
             compose.runOnIdle { controller.prepare(); controller.play() }
-            compose.waitUntil(15000) { state.firstFrameRendered && state.videoAspect < 1.4f }
+            compose.waitUntil(15000) { state.firstFrameRendered && state.videoAspect < 1.4f && observed == Configuration.ORIENTATION_PORTRAIT }
+            val surfaceBeforeRotation = SharedVideoTexture.surface
+            compose.runOnIdle { compose.activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE }
+            compose.waitUntil(10000) { observed == Configuration.ORIENTATION_LANDSCAPE }
+            compose.waitForIdle()
+            assertSame("rotation must retain the decoder's surface", surfaceBeforeRotation, SharedVideoTexture.surface)
             val root = compose.onRoot().fetchSemanticsNode().boundsInRoot
             val fit = compose.onNodeWithTag("fitted-video").fetchSemanticsNode().boundsInRoot
             assertTrue(root.width > root.height)
